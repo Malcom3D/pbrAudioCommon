@@ -70,7 +70,7 @@ class EntityManager:
                 'outputs': ['AmbisonicOutput', 'OmnidirectionalOutput', 'Figure8Output', 'CardioidOutput', 'HypercardioidOutput'],
                 'wave_propagators': 'WavePropagator',
                 'output_datas': 'OutputData',
-                'trajectories': ['TrajectoryData', 'tmpTrajectoryData'],
+                'trajectories': ['ParticleTrajectoryData', 'TrajectoryData', 'tmpTrajectoryData'],
                 'collisions': [ 'CollisionData'],
                 'forces': [ 'ForceData', 'ForceDataSequence'],
                 'modal_vertices': 'ModalVertices',
