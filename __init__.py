@@ -39,8 +39,9 @@ from .lib.shape_properties import ShapeType, ShapeProperties
 from .lib.primitive_geometry import PrimitiveGeometry
 from .lib.score_data import ScoreEvent, ScoreTrack
 from .lib.approx2faust import Approx2Faust
+from .lib.cubicspline_with_nan import CubicSplineWithNaN
 
-from .lib.functions import _mesh_to_obj, _acoustic_domain_mesh, _load_mesh, _load_pose, _generate_lib, _generate_band_frequencies, _euler_to_rotation_matrix, _parse_lib, _update_status, _cartesian_to_spherical, _trilinear_interpolate, _degrees_to_radians, _compute_rayleigh_damping, _mono_to_bands, _compute_face_normals, _adjust_for_fracture_shard, _generate_stochastic_lib, _generate_physical_lib
+from .lib.functions import _mesh_to_obj, _acoustic_domain_mesh, _load_mesh, _load_pose, _generate_lib, _generate_band_frequencies, _euler_to_rotation_matrix, _parse_lib, _update_status, _cartesian_to_spherical, _trilinear_interpolate, _degrees_to_radians, _compute_rayleigh_damping, _mono_to_bands, _compute_face_normals, _adjust_for_fracture_shard, _generate_stochastic_lib, _generate_physical_lib, _load_particle
 
 from .lib.debug_utils import debug_print, set_debug, set_debug_prefix, set_debug_output
 
@@ -66,6 +67,7 @@ __all__ = [
     'ScoreEvent',
     'ScoreTrack',
     'Approx2Faust',
+    'CubicSplineWithNaN',
     'debug_print',
     'set_debug',
     'set_debug_prefix',
@@ -74,6 +76,7 @@ __all__ = [
     '_acoustic_domain_mesh',
     '_load_mesh',
     '_load_pose',
+    '_load_particle',
     '_generate_band_frequencies',
     '_euler_to_rotation_matrix',
     '_parse_lib',

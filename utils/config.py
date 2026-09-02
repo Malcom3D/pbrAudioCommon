@@ -181,6 +181,14 @@ class OutputConfig:
     calibration_file: Optional[str] = None
 
 @dataclass
+class ParticleConfig:
+    idx: int
+    name: str
+    obj_path: str
+    static: bool
+    acoustic_shader: Optional[AcousticShader] = None
+
+@dataclass
 class ObjectConfig:
     idx: int
     name: str
@@ -341,6 +349,16 @@ class Config:
                 acoustic_shader=self._create_acoustic_shader(acoustic_shader_data) if acoustic_shader_data else None
             )
             self.objects.append(object_config)
+
+        # Handle particles with nested acoustic_shader
+        self.particles = []
+        for o in self.data.get('particles', []):
+            acoustic_shader_data = o.get('acoustic_shader', {})
+            particles_config = ParticleConfig(
+                **{k: v for k, v in o.items() if k != 'acoustic_shader'},
+                acoustic_shader=self._create_acoustic_shader(acoustic_shader_data) if acoustic_shader_data else None
+            )
+            self.particles.append(object_config)
 
     def _create_acoustic_shader(self, shader_data: Dict[str, Any]) -> AcousticShader:
         """Create AcousticShader instance from dictionary data"""

@@ -172,6 +172,74 @@ def _load_pose(config_obj: Any) -> Tuple[np.ndarray, np.ndarray]:
     else:
         return positions, rotations
 
+def _load_particle(particle_cfg: Any) -> Dict[int, Dict[str, Dict]]:
+    """
+    Load particle data from npz files.
+
+    Expected format:
+    - positions: (n_particles, 3) float32
+    - rotations: (n_particles, 3) float32 (Euler angles XYZ)
+    - sizes: (n_particles, 3) float32
+    - states: (n_particles,) int8 (0=dead, 1=alive, 2=unborn)
+
+    Files can be:
+    - {name}.npz for static particles
+    - {name}_{frame:05d}.npz for animated particles
+
+    Returns:
+    --------
+    Dict of frame -> {particle_id -> data}
+    """
+    frames = {}
+
+    filepath = particle_cfg.obj_path
+
+    if not os.path.exists(data_path):
+        debug_print(f"Particle data path does not exist: {data_path}")
+        return frames
+
+    # Get all npz files
+    npz_files = [f for f in os.listdir(data_path) if f.endswith('.npz')]
+
+    for filename in sorted(npz_files):
+        filepath = os.path.join(data_path, filename)
+
+        try:
+            data = np.load(filepath)
+
+            positions = data['positions']
+            rotations = data['rotations']
+            states = data['states']
+
+            # Extract frame index from filename
+            # Format: {name}_{frame:05d}.npz or {name}.npz
+            frame_idx = 0
+            parts = filename.split('_')
+            if len(parts) >= 2:
+                try:
+                    frame_idx = int(parts[-1].replace('.npz', ''))
+                except:
+                    frame_idx = 0
+
+            # Create particle data for this frame
+            frame_data = {}
+            n_particles = positions.shape[0]
+
+            for i in range(n_particles):
+                particle_id = f"particle_{i}"
+                frame_data[particle_id] = {
+                    'position': positions[i],
+                    'rotation': rotations[i],
+                    'state': states[i]
+                }
+
+            frames[frame_idx] = frame_data
+
+        except Exception as e:
+            debug_print(f"Error loading particle file {filename}: {e}")
+
+    return frames
+
 def _generate_band_frequencies(lowest_frequency: float, higher_frequency: float, bands_per_octave: float):
     """
     Generate frequencies from lowest_frequency to higher_frequency with specified steps per octave
