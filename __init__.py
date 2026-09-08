@@ -43,7 +43,7 @@ from .lib.cubicspline_with_nan import CubicSplineWithNaN
 from .lib.collision_data import CollisionType, CollisionData
 from .lib.force_data import ContactType, ForceData, ForceDataSequence
 from .lib.hertzian_contact import HertzianContact
-from .lib.modal_vertices import ModalVerticeS
+from .lib.modal_vertices import ModalVertices
 
 from .lib.functions import _mesh_to_obj, _acoustic_domain_mesh, _load_mesh, _load_pose, _generate_lib, _generate_band_frequencies, _euler_to_rotation_matrix, _parse_lib, _update_status, _cartesian_to_spherical, _trilinear_interpolate, _degrees_to_radians, _compute_rayleigh_damping, _mono_to_bands, _compute_face_normals, _adjust_for_fracture_shard, _generate_stochastic_lib, _generate_physical_lib, _load_particle
 
