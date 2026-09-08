@@ -181,9 +181,13 @@ def _load_particle(particle_cfg: Any) -> Dict[int, Dict[str, Dict]]:
     positions, rotations, states = ([] for _ in range(3))
     for filename in sorted(npz_files):
         data = np.load(os.path.join(data_path, filename))
-        positions.append(data['positions'])
-        rotations.append(data['rotations'])
-        states.append(data['states'])
+        positions.append(data[data.files[0]])
+        rotations.append(data[data.files[1]])
+        states.append(data[data.files[2]])
+
+    positions = np.array(positions)
+    rotations = np.array(rotations)
+    states = np.array(states)
 
     return positions, rotations, states
 

@@ -352,13 +352,13 @@ class Config:
 
         # Handle particles with nested acoustic_shader
         self.particles = []
-        for o in self.data.get('particles', []):
-            acoustic_shader_data = o.get('acoustic_shader', {})
+        for p in self.data.get('particles', []):
+            acoustic_shader_data = p.get('acoustic_shader', {})
             particles_config = ParticleConfig(
-                **{k: v for k, v in o.items() if k != 'acoustic_shader'},
+                **{k: v for k, v in p.items() if k != 'acoustic_shader'},
                 acoustic_shader=self._create_acoustic_shader(acoustic_shader_data) if acoustic_shader_data else None
             )
-            self.particles.append(object_config)
+            self.particles.append(particles_config)
 
     def _create_acoustic_shader(self, shader_data: Dict[str, Any]) -> AcousticShader:
         """Create AcousticShader instance from dictionary data"""
