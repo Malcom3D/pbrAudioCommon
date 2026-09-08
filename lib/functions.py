@@ -178,7 +178,7 @@ def _load_particle(particle_cfg: Any) -> Dict[int, Dict[str, Dict]]:
 
     npz_files = [f for f in os.listdir(data_path) if f.endswith('.npz')]
 
-    positions, rotations, sizes, states = ([] for _ in range(3))
+    positions, rotations, sizes, states = ([] for _ in range(4))
     for filename in sorted(npz_files):
         data = np.load(os.path.join(data_path, filename))
         positions.append(data[data.files[0]])
@@ -191,7 +191,7 @@ def _load_particle(particle_cfg: Any) -> Dict[int, Dict[str, Dict]]:
     sizes = np.array(sizes)
     states = np.array(states)
 
-    return positions, rotations, states
+    return positions, rotations, sizes, states
 
 def _generate_band_frequencies(lowest_frequency: float, higher_frequency: float, bands_per_octave: float):
     """
