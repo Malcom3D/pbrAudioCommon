@@ -181,11 +181,12 @@ class OutputConfig:
     calibration_file: Optional[str] = None
 
 @dataclass
-class ParticleConfig:
+class ParticlesConfig:
     idx: int
     name: str
     obj_path: str
     static: bool
+    proxy: bool = True # False = hero particles object, True = massive particles object
     acoustic_shader: Optional[AcousticShader] = None
 
 @dataclass
@@ -354,7 +355,7 @@ class Config:
         self.particles = []
         for p in self.data.get('particles', []):
             acoustic_shader_data = p.get('acoustic_shader', {})
-            particles_config = ParticleConfig(
+            particles_config = ParticlesConfig(
                 **{k: v for k, v in p.items() if k != 'acoustic_shader'},
                 acoustic_shader=self._create_acoustic_shader(acoustic_shader_data) if acoustic_shader_data else None
             )
