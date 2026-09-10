@@ -65,12 +65,12 @@ class EntityManager:
                 'medium_properties': 'MediumProperties'
             }
             self.entities_map = {
-                'sources': ['SphericalSource', 'PlanarSource'],
-                'objects': ['AcousticObject'],
+                'sources': ['ParticlesSource', 'ObjectSource', 'EnvironmetSource', 'SphericalSource', 'PlanarSource'],
+                'objects': ['AcousticObject', 'SurfaceVoxelObject'],
                 'outputs': ['AmbisonicOutput', 'OmnidirectionalOutput', 'Figure8Output', 'CardioidOutput', 'HypercardioidOutput'],
                 'wave_propagators': 'WavePropagator',
                 'output_datas': 'OutputData',
-                'trajectories': ['ParticleTrajectoryData', 'TrajectoryData', 'tmpTrajectoryData'],
+                'trajectories': ['ParticlesTrajectoryData', 'TrajectoryData', 'tmpTrajectoryData'],
                 'collisions': [ 'CollisionData'],
                 'forces': [ 'ForceData', 'ForceDataSequence'],
                 'modal_vertices': 'ModalVertices',
