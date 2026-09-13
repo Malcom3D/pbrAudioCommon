@@ -184,7 +184,7 @@ def _load_particle(particle_cfg: Any) -> Dict[int, Dict[str, Dict]]:
         positions.append(data[data.files[0]])
         rotations.append(data[data.files[1]])
         sizes.append(data[data.files[2]])
-        states.append(data[data.files[2]])
+        states.append(data[data.files[3]])
 
     positions = np.array(positions)
     rotations = np.array(rotations)
