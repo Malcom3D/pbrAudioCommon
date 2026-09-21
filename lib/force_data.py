@@ -24,7 +24,7 @@ from typing import Tuple, List, Optional, Union
 from dataclasses import dataclass, field
 from scipy.interpolate import CubicSpline
 
-from pbrAudioCommon import CubicSplineWithNaN
+from ..lib.cubicspline_with_nan import CubicSplineWithNaN
 
 class ContactType(IntEnum):
     """Enum for different Type of contact mechanics"""
