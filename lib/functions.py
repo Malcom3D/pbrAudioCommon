@@ -684,31 +684,30 @@ process = no.process;
 
     return faust_lib
 
-logger = logging.getLogger(__name__)
-def _get_caller_name(skip: int = 1) -> Optional[str]:
+def _update_status(status_dir: str, filename: str, progress: Optional[int] = None, skip: int = 1) -> float:
     """Return the qualified name of the caller `skip` frames up the stack."""
+    logger = logging.getLogger(__name__)
     try:
         frame = sys._getframe(skip)
     except (ValueError, AttributeError):
-        return None
+        step_name = None
 
     try:
         name = frame.f_code.co_name
         if (self_obj := frame.f_locals.get("self")) is not None:
-            return return f"{type(self_obj).__name__}.{name}"
+            step_name = f"{type(self_obj).__name__}.{name}"
         if (cls_obj := frame.f_locals.get("cls")) is not None:
-            return f"{cls_obj.__name__}.{name}"
-        return name
+            step_name = f"{cls_obj.__name__}.{name}" 
+        step_name = name
     finally:
         del frame
 
-def _update_status(status_dir: str, filename: str, progress: Optional[int] = None) -> float:
-    """Update progress on file and completion of step using the qualified name of the caller `skip` frames up the stack."""
-    step_name = _get_caller_name()
     if step_name is not None:
-        with open(f"{status_dir}/step_done", 'w') as file:
-            file.write(f"{step_name}")
+        mode = 'a' if os.path.exists(f"{status_dir}/step_done") else 'w'
+        with open(f"{status_dir}/step_done", mode) as file:
+            file.write(f"{step_name}\n")
     
+    """Update progress on file and completion of step using the qualified name of the caller `skip` frames up the stack."""
     if progress is not None:
         with open(f"{status_dir}/{filename}", 'w') as file:
             file.write(f"{progress}")
