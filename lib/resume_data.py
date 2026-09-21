@@ -27,7 +27,7 @@ from ..lib.trajectory_data import TrajectoryData
 from ..lib.force_data import ForceDataSequence
 from ..lib.collision_data import CollisionData
 from ..lib.modal_vertices import ModalVertices
-from ..lib.score_track import ScoreTrack
+from ..lib.score_data import ScoreTrack
 from ..lib.particles_trajectory_data import ParticlesTrajectoryData
 
 @dataclass
