@@ -1,5 +1,7 @@
 import os
 import re
+import sys
+import logging
 import random
 import string
 import trimesh
@@ -682,11 +684,35 @@ process = no.process;
 
     return faust_lib
 
-def _update_status(file_path: str, progress: Optional[int] = None):
-    with open(file_path, 'w') as file:
-        if not progress == None:
+logger = logging.getLogger(__name__)
+def _get_caller_name(skip: int = 1) -> Optional[str]:
+    """Return the qualified name of the caller `skip` frames up the stack."""
+    try:
+        frame = sys._getframe(skip)
+    except (ValueError, AttributeError):
+        return None
+
+    try:
+        name = frame.f_code.co_name
+        if (self_obj := frame.f_locals.get("self")) is not None:
+            return return f"{type(self_obj).__name__}.{name}"
+        if (cls_obj := frame.f_locals.get("cls")) is not None:
+            return f"{cls_obj.__name__}.{name}"
+        return name
+    finally:
+        del frame
+
+def _update_status(status_dir: str, filename: str, progress: Optional[int] = None) -> float:
+    """Update progress on file and completion of step using the qualified name of the caller `skip` frames up the stack."""
+    step_name = _get_caller_name()
+    if step_name is not None:
+        with open(f"{status_dir}/step_done", 'w') as file:
+            file.write(f"{step_name}")
+    
+    if progress is not None:
+        with open(f"{status_dir}/{filename}", 'w') as file:
             file.write(f"{progress}")
-    return progress
+        return progress
 
 def _cartesian_to_spherical(x: float, y: float, z: float) -> Tuple[float, float, float]:
     """
