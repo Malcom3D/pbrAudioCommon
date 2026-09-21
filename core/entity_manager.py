@@ -48,6 +48,7 @@ class EntityManager:
             self._forces = {}
             self._modal_vertices = {}
             self._score_tracks = {}
+            self._fracture_events = {}
             self._rigidbody_synth = {}
             self._resonance_synth = {}
             self._singleton = {}
@@ -75,6 +76,7 @@ class EntityManager:
                 'forces': [ 'ForceData', 'ForceDataSequence'],
                 'modal_vertices': 'ModalVertices',
                 'score_tracks': 'ScoreTrack',
+                'fracture_events': 'FractureEvent',
                 'rigidbody_synth': 'RigidBodySynth',
                 'resonance_synth': 'ResonanceSynth'
             }
@@ -102,7 +104,7 @@ class EntityManager:
     def get(self, entity: str = None, idx: int = None) -> dict[str, Any]:
         """Get all objects"""
         if entity == None:
-            return self._singleton, self._sources, self._objects, self._outputs, self._wave_propagators, self._output_datas, self._trajectories, self._collisions, self._forces, self._modal_vertices, self._score_tracks, self._rigidbody_synth, self._resonance_synth
+            return self._singleton, self._sources, self._objects, self._outputs, self._wave_propagators, self._output_datas, self._trajectories, self._collisions, self._forces, self._modal_vertices, self._score_tracks, self._fracture_events, self._rigidbody_synth, self._resonance_synth
         for key in self.sigleton_map.keys():
             if entity in key:
                 if entity in ['geometry_data', 'material_properties', 'medium_properties']:

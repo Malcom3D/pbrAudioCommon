@@ -22,7 +22,13 @@ from typing import List, Tuple, Any, Dict
 from dataclasses import dataclass, field
 from dask import delayed, compute
 
-from pbrAudioCommon import EntityManager, CollisionData, ForceDataSequence, ModalVertices, TrajectoryData, ScoreTrack
+from ..core.entity_manager import EntityManager
+from ..lib.trajectory_data import TrajectoryData
+from ..lib.force_data import ForceDataSequence
+from ..lib.collision_data import CollisionData
+from ..lib.modal_vertices import ModalVertices
+from ..lib.score_track import ScoreTrack
+from ..lib.particles_trajectory_data import ParticlesTrajectoryData
 
 @dataclass
 class ResumeData:
@@ -37,6 +43,7 @@ class ResumeData:
         self.forces_dir = f"{config.system.cache_path}/forces_data"
         self.modalvertices_dir = f"{config.system.cache_path}/modalvertices"
         self.scoretracks_dir = f"{config.system.cache_path}/scoretracks"
+        self.fracture_dir = f"{config.system.cache_path}/fracture"
 
     def load_data(self):
         trajectories = self.entity_manager.get('trajectories')
@@ -66,7 +73,6 @@ class ResumeData:
                     if filename.endswith('.pkl'):
                         forces = ForceDataSequence.load(f"{self.forces_dir}/{filename}")
                         _ = self.entity_manager.register('forces', forces)
-            forces = self.entity_manager.get('forces')
 
         modal_vertices = self.entity_manager.get('modal_vertices')
         if len(modal_vertices) == 0:
@@ -85,3 +91,11 @@ class ResumeData:
                     if os.path.isfile(f"{self.scoretracks_dir}/{filename}"):
                         score_tracks = ScoreTrack.load(f"{self.scoretracks_dir}/{filename}")
                         _ = self.entity_manager.register('score_tracks', score_tracks)
+
+        fracture_events = self.entity_manager.get('fracture_events')
+        if len(fracture_events) == 0:
+            if os.path.exists(self.fracture_dir):
+                for filename in os.listdir(self.fracture_dir):
+                    if filename.endswith('.pkl'):
+                        fracture_event = FractureEvent.load(f"{self.fracture_dir}/{filename}")
+                        _ = self.entity_manager.register('fracture_events', fracture_event)
