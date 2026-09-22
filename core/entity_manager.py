@@ -116,6 +116,31 @@ class EntityManager:
                         entities = eval(f"self._{entity}")
                         return entities.get(idx) if not idx == None else entities
 
+    def count_entity(self, entity: str = None):
+        """Count all objects"""
+        entities_count = {}
+        if entity == None:
+            for entity in self.sigleton_map.keys():
+                if entity in self._singleton:
+                    entities_count[entity] = 1
+                elif entity not in self._singleton:
+                    entities_count[entity] = 0
+            for entity in self.entities_map.keys():
+                _entity = eval(f"self._{entity}")
+                entities_count[entity] = len(_entity)
+
+        elif entity in self.sigleton_map.keys():
+            if entity in self._singleton:
+                entities_count[entity] = 1
+            else:
+                entities_count[entity] = 0
+
+        elif entity in self.entities_map.keys():
+            _entity = eval(f"self._{entity}")
+            entities_count[entity] = len(_entity)
+        
+        return entities_count
+
     def unregister(self, entity: str, idx: int = None) -> None:
         """Unregister an object"""
         for key in self.sigleton_map.keys():
