@@ -143,10 +143,24 @@ def _load_mesh(obj_config: Any, frame_idx: int, use_proxy_path: bool = True) -> 
         filenames = sorted(items, key=lambda x: int(''.join(filter(str.isdigit, x))))
         filename = os.path.join(obj_path, filenames[frame_idx])
 
-    data = np.load(filename, allow_pickle=False)
-    vertices = data[data.files[0]]
-    normals = data[data.files[1]]
-    faces = data[data.files[2]]
+#    data = np.load(filename, allow_pickle=False)
+    # Use loading with context manager
+    try:
+        with np.load(filename) as data:
+            vertices = data[data.files[0]]
+            normals = data[data.files[1]]
+            faces = data[data.files[2]]
+    except:
+        debug_print(f"_load_mesh Exception with file: {filename}, frame: {frame_idx}.")
+        debug_print(f"_load_mesh retriryng...")
+        try:
+            with np.load(filename, allow_pickle=False) as data:
+                vertices = data[data.files[0]]
+                normals = data[data.files[1]]
+                faces = data[data.files[2]]
+        except Exception as e:
+            debug_print("_load_mesh Exception:", e)
+
     return vertices, normals, faces
 
 def _load_pose(config_obj: Any) -> Tuple[np.ndarray, np.ndarray]:
