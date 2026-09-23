@@ -72,7 +72,7 @@ class EntityManager:
                 'wave_propagators': 'WavePropagator',
                 'output_datas': 'OutputData',
                 'trajectories': ['ParticlesTrajectoryData', 'TrajectoryData', 'tmpTrajectoryData'],
-                'collisions': [ 'CollisionData'],
+                'collisions': [ 'CollisionData', 'ParticlesCollisionsPoints', 'ParticlesCollisionsVoxels'],
                 'forces': [ 'ForceData', 'ForceDataSequence'],
                 'modal_vertices': 'ModalVertices',
                 'score_tracks': 'ScoreTrack',
