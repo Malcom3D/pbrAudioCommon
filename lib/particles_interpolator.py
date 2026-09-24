@@ -373,7 +373,19 @@ class ParticlesInterpolator:
     def save_unsampled(self, frame_idx: int, unsampled_positions: np.ndarray, unsampled_rotations: np.ndarray, unsampled_frames: np.ndarray):
         """
         Save unsampled particle data between frame_idx and frame_idx + 1
+        
         """
+        config = self.entity_manager.get('config')
+        fps = config.system.fps
+        fps_base = config.system.fps_base
+        subframes = config.system.subframes
+        sample_rate = config.system.sample_rate
+        sfps = (fps / fps_base) * subframes
+
+        unsampled_frames += (frame_idx * sample_rate / sfps)
+        unsampled_frames *= sfps / sample_rate
+        self._frames = np.unique(np.sort(np.concatenate((self._frames, unsampled_frames))))
+
         filename = f"{self._particle_name}_{frame_idx:05d}_unsampled.npz"
 
         output_file = Path(self._obj_path) / filename
@@ -743,7 +755,17 @@ class ParticlesInterpolator:
     def get_particle_count(self) -> int:
         """Get the number of particles in the system."""
         return self._particle_count
-    
+
+    def get_sampled_frames(self, as_samples: bool = True):
+        config = self.entity_manager.get('config')
+        fps = config.system.fps
+        fps_base = config.system.fps_base
+        subframes = config.system.subframes
+        sample_rate = config.system.sample_rate
+        sfps = (fps / fps_base) * subframes
+
+        return self._frames if not as_samples else self._frames * sample_rate / sfps
+
     def get_frame_range(self) -> Tuple[int, int]:
         """Get the valid frame range."""
         if len(self._frames) == 1:
