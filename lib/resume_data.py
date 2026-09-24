@@ -51,7 +51,9 @@ class ResumeData:
             if os.path.exists(f"{self.trajectories_dir}") and not len(os.listdir(f"{self.trajectories_dir}")) == 0:
                 for filename in os.listdir(f"{self.trajectories_dir}"):
                     trajectory = None
-                    if filename.endswith('.pkl') and os.path.isfile(f"{self.trajectories_dir}/corrected/{filename}"):
+                    if filename.endswith('_ParticleSystem.pkl'):
+                        trajectory = ParticlesTrajectoryData.load(f"{self.trajectories_dir}/{filename}", self.entity_manager)
+                    elif filename.endswith('.pkl') and os.path.isfile(f"{self.trajectories_dir}/corrected/{filename}"):
                         trajectory = TrajectoryData.load(f"{self.trajectories_dir}/corrected/{filename}")
                     elif filename.endswith('.pkl') and not os.path.isfile(f"{self.trajectories_dir}/corrected/{filename}"):
                         trajectory = TrajectoryData.load(f"{self.trajectories_dir}/{filename}")

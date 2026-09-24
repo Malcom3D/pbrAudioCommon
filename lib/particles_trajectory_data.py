@@ -460,14 +460,21 @@ class ParticlesTrajectoryData:
         """
         # Ensure directory exists
         os.makedirs(os.path.dirname(os.path.abspath(filepath)), exist_ok=True)
-        
+
         # Create a serializable version of the object
         save_dict = {
+            'frames': self.frames,
+            'sampled_frames': self.sampled_frames,
+            'particles_idx': self.particles_idx,
+            'sfps': self.sfps,
+            'sample_rate': self.sample_rate,
             'particles_count': self.particles_count,
+            'is_static': self.is_static,
             'positions': self.positions,
             'rotations': self.rotations,
+            'sizes': self.sizes,
             'states': self.states,
-            'is_static': self.is_static,
+            'massive': self.massive.particles_idx if self.massive is not None else None,
             '_format': 'ParticlesTrajectoryData_v1_pickle'
         }
         
@@ -476,7 +483,7 @@ class ParticlesTrajectoryData:
         print(f"Particle trajectory data saved to {filepath}")
     
     @staticmethod
-    def load(filepath: str) -> 'ParticlesTrajectoryData':
+    def load(filepath: str, entity_manager: Any = None) -> 'ParticlesTrajectoryData':
         """
         Load data from pickle format.
         
@@ -497,11 +504,26 @@ class ParticlesTrajectoryData:
         if '_format' not in data or data['_format'] != 'ParticlesTrajectoryData_v1_pickle':
             raise ValueError("Invalid file format or version")
         
+        # Handle Massive Particles
+        massive = None
+        if data['massive'] is not None and entity_manager is not None:
+            massive=ParticlesInterpolator(data['massive'], entity_manager)
+        elif entity_manager == None:
+            print('[ParticlesTrajectoryData]: load of massive data failed - needed entity_manager')
+            return
+
         # Reconstruct the object
         return ParticlesTrajectoryData(
+            frames=data['frames'],
+            sampled_frames=data['sampled_frames'],
+            particles_idx=data['particles_idx'],
+            sfps=data['sfps'],
+            sample_rate=data['sample_rate'],
             particles_count=data['particles_count'],
+            is_static=data['is_static'],
             positions=data['positions'],
             rotations=data['rotations'],
+            sizes=data['sizes'],
             states=data['states'],
-            is_static=data['is_static'],
+            massive=massive
         )
