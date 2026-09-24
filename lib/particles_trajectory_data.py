@@ -507,7 +507,7 @@ class ParticlesTrajectoryData:
         # Handle Massive Particles
         massive = None
         if data['massive'] is not None and entity_manager is not None:
-            massive=ParticlesInterpolator(data['massive'], entity_manager)
+            massive=ParticlesInterpolator(entity_manager, data['massive'])
         elif entity_manager == None:
             print('[ParticlesTrajectoryData]: load of massive data failed - needed entity_manager')
             return

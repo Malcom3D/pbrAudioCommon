@@ -382,10 +382,6 @@ class ParticlesInterpolator:
         sample_rate = config.system.sample_rate
         sfps = (fps / fps_base) * subframes
 
-        unsampled_frames += (frame_idx * sample_rate / sfps)
-        unsampled_frames *= sfps / sample_rate
-        self._frames = np.unique(np.sort(np.concatenate((self._frames, unsampled_frames))))
-
         filename = f"{self._particle_name}_{frame_idx:05d}_unsampled.npz"
 
         output_file = Path(self._obj_path) / filename
@@ -408,6 +404,10 @@ class ParticlesInterpolator:
         Returns:
             Dictionary containing particle data or None if frame not found
         """
+        # Frame as int if float
+        if isinstance(frame, float):
+            frame = int(np.floor(frame))
+
         interframe = ''
         if unsampled:
             interframe = '_unsampled'
