@@ -107,60 +107,93 @@ class ParticlesInterpolator:
         try:
             import numba as nb
             
-            @nb.jit(nopython=True, parallel=True, cache=True)
-            def _interpolate_positions_numba(pos0, pos1, posU, tU, t):
-                if posU.shape[0] > 0:
-                    n = pos0.shape[0]
-                    result = np.empty_like(pos0)
-                    for i in nb.prange(n):
-                        t_i = tU[i]
-                        if t <= t_i:
-                            if t_i > 0.0:
-                                alpha = t / t_i
-                            else:
-                                alpha = 1.0
-                            for j in range(3):
-                                result[i, j] = pos0[i, j] * (1.0 - alpha) + posU[i, j] * alpha
-                        elif t > t_i:
-                            denom = 1.0 - t_i
-                            if denom > 0.0:
-                                alpha = (t - t_i) / denom
-                            else:
-                                alpha = 0.0
-                            for j in range(3):
-                                result[i, j] = posU[i, j] * (1.0 - alpha) + pos1[i, j] * alpha
-                else:
-                    result = np.empty_like(pos0)
-                    for i in nb.prange(pos0.shape[0]):
-                        for j in range(3):
-                            result[i, j] = pos0[i, j] * (1.0 - t) + pos1[i, j] * t
-                return result
+#            @nb.jit(nopython=True, parallel=True, cache=True)
+#            def _interpolate_positions_numba(pos0, pos1, posU, tU, t):
+#                n = pos0.shape[0]
+#                result = np.zeros_like(pos0)
+#                alpha = np.zeros(n, dtype=np.float64)
+#                if posU.shape[0] > 0:
+#                    less_mask = tU <= t
+#                    if np.count_nonzero(less_mask) > 0:
+#                        zero_mask = tU[less_mask] > 0.0
+#                        alpha[less_mask] = 1.0
+#                        alpha[less_mask][zero_mask] = t / tU[less_mask][zero_mask]
+#                        result[less_mask] = pos0 * (1.0 - alpha[:, np.newaxis]) + posU * alpha[:, np.newaxis]
+#
+#                    great_mask = tU > t
+#                    if np.count_nonzero(great_mask) > 0:
+#                        alpha[great_mask] = 0.0
+#                        denom = 1.0 - alpha[great_mask]
+#                        denom_mask = denom > 0.0
+#                        alpha[great_mask][denom_mask] = (t - tU[great_mask][denom_mask]) / denom[denom_mask]
+#                        result[great_mask] = pos0 * (1.0 - alpha[:, np.newaxis]) + posU * alpha[:, np.newaxis]
+
+#                n = pos0.shape[0]
+#                result = np.zeros_like(pos0)
+#                if posU.shape[0] > 0:
+#                    for i in nb.prange(n):
+#                        if tU[i] <= t:
+#                            if tU[i] > 0.0:
+#                                alpha = t / tU[i]
+#                            else:
+#                                alpha = 1.0
+#                        else:
+#                            alpha = 0.0
+#                        result[i] = pos0[i] * (1.0 - alpha) + posU[i] * alpha
+ 
+#                        t_i = tU[i]
+#                        if t <= t_i:
+#                            alpha[i] = 1.0
+#                            if t_i > 0.0:
+#                                alpha[i] = t / t_i
+#                            for j in range(3):
+#                                result[i, j] = pos0[i, j] * (1.0 - alpha) + posU[i, j] * alpha
+#                        elif t > t_i:
+#                            denom = 1.0 - t_i
+#                            alpha = 0.0
+#                            if denom > 0.0:
+#                                alpha = (t - t_i) / denom
+#                            for j in range(3):
+#                                result[i, j] = posU[i, j] * (1.0 - alpha) + pos1[i, j] * alpha
+#                else:
+#                    result = np.empty_like(pos0)
+#                    for i in nb.prange(pos0.shape[0]):
+#                        for j in range(3):
+#                            result[i, j] = pos0[i, j] * (1.0 - t) + pos1[i, j] * t
+#                return result
+
+#            @nb.jit(nopython=True, parallel=True, cache=True)
+#            def _interpolate_sizes_numba(size0, size1, sizeU, tU, t):
+#                """Interpolate sizes at time t using size0, size1, sizeU and tU."""
+#                if sizeU.shape[0] > 0:
+#                    result = np.empty_like(size0)
+#                    for i in nb.prange(size0.shape[0]):
+#                        if t <= tU[i]:
+#                            # Interpolate between size0 (at t=0) and sizeU[i] (at t=tU[i])
+#                            if tU[i] > 0.0:
+#                                alpha = t / tU[i]
+#                                result[i] = size0[i] * (1.0 - alpha) + sizeU[i] * alpha
+#                            else:
+#                                result[i] = sizeU[i]
+#                        else:
+#                            # Interpolate between sizeU[i] (at t=tU[i]) and size1[i] (at t=1)
+#                            if tU[i] < 1.0:
+#                                alpha = (t - tU[i]) / (1.0 - tU[i])
+#                                result[i] = sizeU[i] * (1.0 - alpha) + size1[i] * alpha
+#                            else:
+#                                result[i] = size1[i]
+#                else:
+#                    result = np.zeros_like(size0)
+#                    for i in nb.prange(size0.shape[0]):
+#                        result[i] = size0[i] * (1.0 - t) + size1[i] * t
+#                    return result
 
             @nb.jit(nopython=True, parallel=True, cache=True)
             def _interpolate_sizes_numba(size0, size1, sizeU, tU, t):
-                """Interpolate sizes at time t using size0, size1, sizeU and tU."""
-                if sizeU.shape[0] > 0:
-                    result = np.empty_like(size0)
-                    for i in nb.prange(size0.shape[0]):
-                        if t <= tU[i]:
-                            # Interpolate between size0 (at t=0) and sizeU[i] (at t=tU[i])
-                            if tU[i] > 0.0:
-                                alpha = t / tU[i]
-                                result[i] = size0[i] * (1.0 - alpha) + sizeU[i] * alpha
-                            else:
-                                result[i] = sizeU[i]
-                        else:
-                            # Interpolate between sizeU[i] (at t=tU[i]) and size1[i] (at t=1)
-                            if tU[i] < 1.0:
-                                alpha = (t - tU[i]) / (1.0 - tU[i])
-                                result[i] = sizeU[i] * (1.0 - alpha) + size1[i] * alpha
-                            else:
-                                result[i] = size1[i]
-                else:
-                    result = np.empty_like(size0)
-                    for i in nb.prange(size0.shape[0]):
-                        result[i] = size0[i] * (1.0 - t) + size1[i] * t
-                    return result
+                result = np.zeros_like(size0)
+                for i in nb.prange(size0.shape[0]):
+                    result[i] = size0[i] * (1.0 - t) + size1[i] * t
+                return result
 
             @nb.jit(nopython=True, parallel=True, cache=True)
             def _interpolate_quaternions_numba(q0, q1, qU, tU, t):
@@ -188,7 +221,7 @@ class ParticlesInterpolator:
                         else:
                             # Interpolate between qU (t=tUi) and q1 (t=1)
                             a0 = qU[i, 0]; a1 = qU[i, 1]; a2 = qU[i, 2]; a3 = qU[i, 3]
-                            b0 = q1[i, 0]; b1 = q1[i, 1]; b2 = q1[i, 2]; b3 = q11[i, 3]
+                            b0 = q1[i, 0]; b1 = q1[i, 1]; b2 = q1[i, 2]; b3 = q1[i, 3]
                             # Local parameter s in [0, 1] within [tUi, 1]
                             denom = 1.0 - tUi
                             if denom > 1e-12:
@@ -307,13 +340,36 @@ class ParticlesInterpolator:
                 
                 return result
            
-            self._interp_pos_numba = _interpolate_positions_numba
+#            self._interp_pos_numba = _interpolate_positions_numba
             self._interp_size_numba = _interpolate_sizes_numba
             self._interp_quat_numba = _interpolate_quaternions_numba
             
         except ImportError:
             warnings.warn("Numba not available, using NumPy only")
             self.use_numba = False
+
+    def _interp_pos_numba(self, pos0, pos1, posU, tU, t):
+        n = pos0.shape[0]
+        result = np.zeros_like(pos0)
+        alpha = np.zeros(n, dtype=np.float64)
+        if posU.shape[0] > 0:
+            less_mask = tU <= t
+            if np.count_nonzero(less_mask) > 0:
+                zero_mask = tU[less_mask] > 0.0
+                alpha[less_mask] = 1.0
+                alpha[less_mask][zero_mask] = t / tU[less_mask][zero_mask]
+                result[less_mask] = pos0 * (1.0 - alpha[:, np.newaxis]) + posU * alpha[:, np.newaxis]
+
+            great_mask = tU > t
+            if np.count_nonzero(great_mask) > 0:
+                alpha[great_mask] = 0.0
+                denom = 1.0 - alpha[great_mask]
+                denom_mask = denom > 0.0
+                alpha[great_mask][denom_mask] = (t - tU[great_mask][denom_mask]) / denom[denom_mask]
+                result[great_mask] = pos0 * (1.0 - alpha[:, np.newaxis]) + posU * alpha[:, np.newaxis]
+        else:
+            result = pos0 * (1.0 - t) + pos1 * t
+        return result
     
     def _discover_frames(self):
         """Discover available frame files in the data directory."""
@@ -370,7 +426,7 @@ class ParticlesInterpolator:
             self._particle_count = first_frame['particle_count']
             debug_print(f"ParticleInterpolator: Found {self._particle_count} particles across {len(self._frames)} frames")
 
-    def save_unsampled(self, frame_idx: int, unsampled_positions: np.ndarray, unsampled_rotations: np.ndarray, unsampled_frames: np.ndarray):
+    def save_unsampled(self, frame_idx: int, unsampled_positions: np.ndarray, unsampled_rotations: np.ndarray, unsampled_frames: np.ndarray, particles_sizes: np.ndarray):
         """
         Save unsampled particle data between frame_idx and frame_idx + 1
         
@@ -390,11 +446,11 @@ class ParticlesInterpolator:
         output_file.parent.mkdir(parents=True, exist_ok=True)
 
         # Save with named keys so that load_frame(..., unsampled=True) can read them
-        np.savez_compressed(output_file, positions=unsampled_positions, rotations=unsampled_rotations, times=unsampled_frames)
+        np.savez_compressed(output_file, positions=unsampled_positions, rotations=unsampled_rotations, sizes=particles_sizes, times=unsampled_frames)
 
         debug_print(f"ParticlesInterpolator: Saved unsampled data for frame {frame_idx} ({self._particle_count} particles) -> {output_file}")
     
-    def load_frame(self, frame: int, unsampled: bool = False) -> Optional[Dict[str, np.ndarray]]:
+    def load_frame(self, frame_idx: int, unsampled: bool = False) -> Optional[Dict[str, np.ndarray]]:
         """
         Load particle data for a specific frame.
         
@@ -404,17 +460,16 @@ class ParticlesInterpolator:
         Returns:
             Dictionary containing particle data or None if frame not found
         """
-        # Frame as int if float
-        if isinstance(frame, float):
-            frame = int(np.floor(frame))
+        # set frame as int
+        frame = int(np.floor(frame_idx))
 
         interframe = ''
         if unsampled:
             interframe = '_unsampled'
 
         # Check cache first
-        if frame in self._frame_cache:
-            return self._frame_cache[frame]
+        if frame_idx in self._frame_cache:
+            return self._frame_cache[frame_idx]
         
         # Determine file path
         if self._is_static or len(self._frames) == 1:
@@ -436,20 +491,14 @@ class ParticlesInterpolator:
             return None
         
         # Load data
-        if unsampled and file_path.exists():
-            frame_data = {
-                'positions': np.array([]), 
-                'rotations': np.array([]),
-                'sizes': np.array([]),
-                'times': np.array([]),
-            }
+        if unsampled:
             try:
                 with np.load(file_path) as data:
                     frame_data = {
                         'positions': data[data.files[0]].astype(np.float64),
                         'rotations': data[data.files[1]].astype(np.float64),
-                        'sizes': np.array([]),
-                        'times': data[data.files[2]].astype(np.float64)
+                        'sizes': data[data.files[2]],
+                        'times': data[data.files[3]].astype(np.float64),
                     }
 
                     # Convert euler rotations to quaternions for better interpolation
@@ -458,11 +507,14 @@ class ParticlesInterpolator:
                     return frame_data
 
             except Exception as e:
-                debug_print(f"Error loading frame {frame}: {e}")
-                return frame_data
-        elif unsampled and not file_path.exists():
-            return frame_data
-        else:
+                debug_print(f"Error loading frame {frame_idx}: {e}")
+                return {
+                    'positions': np.array([]), 
+                    'rotations': np.array([]),
+                    'sizes': np.array([]),
+                    'times': np.array([]),
+                }
+        elif not unsampled:
             try:
                 with np.load(file_path) as data:
                     frame_data = {
@@ -482,7 +534,7 @@ class ParticlesInterpolator:
                             # Remove oldest entry (simple FIFO)
                             oldest_key = next(iter(self._frame_cache))
                             del self._frame_cache[oldest_key]
-                        self._frame_cache[frame] = frame_data
+                        self._frame_cache[frame_idx] = frame_data
                 
                     return frame_data
                 
@@ -641,7 +693,7 @@ class ParticlesInterpolator:
             return None
 
         # Load unsampled frame
-        frame_unsampled = self.load_frame(lower_frame, unsampled=True)
+        frame_unsampled = self.load_frame(frame, unsampled=True)
         
         # Calculate interpolation factor
         t = (frame - lower_frame) / (upper_frame - lower_frame)
@@ -652,14 +704,14 @@ class ParticlesInterpolator:
         # Interpolate positions
         if 'positions' in attributes:
             if self.use_numba and hasattr(self, '_interp_pos_numba'):
-                result['positions'] = self._interp_pos_numba(frame_lower['positions'], frame_upper['positions'], frame_unsampled['positions'], frame_unsampled['frame'], t)
+                result['positions'] = self._interp_pos_numba(frame_lower['positions'], frame_upper['positions'], frame_unsampled['positions'], frame_unsampled['times'], t)
             else:
                 result['positions'] = (frame_lower['positions'] * (1.0 - t) + frame_upper['positions'] * t)
         
         # Interpolate quaternions and convert back to euler
         if 'rotations' in attributes:
             if self.use_numba and hasattr(self, '_interp_quat_numba'):
-                quats = self._interp_quat_numba(frame_lower['quaternions'], frame_upper['quaternions'], frame_unsampled['quaternions'], frame_unsampled['frame'], t)
+                quats = self._interp_quat_numba(frame_lower['quaternions'], frame_upper['quaternions'], frame_unsampled['quaternions'], frame_unsampled['times'], t)
             else:
                 # Manual slerp
                 quats = self._manual_slerp(frame_lower['quaternions'], frame_upper['quaternions'], t)
@@ -670,7 +722,7 @@ class ParticlesInterpolator:
         # Interpolate sizes
         if 'sizes' in attributes:
             if self.use_numba and hasattr(self, '_interp_size_numba'):
-                result['sizes'] = self._interp_size_numba(frame_lower['sizes'], frame_upper['sizes'], frame_unsampled['sizes'], frame_unsampled['frame'], t)
+                result['sizes'] = self._interp_size_numba(frame_lower['sizes'], frame_upper['sizes'], frame_unsampled['sizes'], frame_unsampled['times'], t)
             else:
                 result['sizes'] = (frame_lower['sizes'] * (1.0 - t) + frame_upper['sizes'] * t)
         
