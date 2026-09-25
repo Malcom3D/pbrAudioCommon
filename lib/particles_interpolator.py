@@ -652,14 +652,14 @@ class ParticlesInterpolator:
         # Interpolate positions
         if 'positions' in attributes:
             if self.use_numba and hasattr(self, '_interp_pos_numba'):
-                result['positions'] = self._interp_pos_numba(frame_lower['positions'], frame_upper['positions'], frame_unsampled['positions'], frame_usampled['frame'], t)
+                result['positions'] = self._interp_pos_numba(frame_lower['positions'], frame_upper['positions'], frame_unsampled['positions'], frame_unsampled['frame'], t)
             else:
                 result['positions'] = (frame_lower['positions'] * (1.0 - t) + frame_upper['positions'] * t)
         
         # Interpolate quaternions and convert back to euler
         if 'rotations' in attributes:
             if self.use_numba and hasattr(self, '_interp_quat_numba'):
-                quats = self._interp_quat_numba(frame_lower['quaternions'], frame_upper['quaternions'], frame_unsampled['quaternions'], frame_usampled['frame'], t)
+                quats = self._interp_quat_numba(frame_lower['quaternions'], frame_upper['quaternions'], frame_unsampled['quaternions'], frame_unsampled['frame'], t)
             else:
                 # Manual slerp
                 quats = self._manual_slerp(frame_lower['quaternions'], frame_upper['quaternions'], t)
@@ -670,7 +670,7 @@ class ParticlesInterpolator:
         # Interpolate sizes
         if 'sizes' in attributes:
             if self.use_numba and hasattr(self, '_interp_size_numba'):
-                result['sizes'] = self._interp_size_numba(frame_lower['sizes'], frame_upper['sizes'], frame_unsampled['sizes'], frame_usampled['frame'], t)
+                result['sizes'] = self._interp_size_numba(frame_lower['sizes'], frame_upper['sizes'], frame_unsampled['sizes'], frame_unsampled['frame'], t)
             else:
                 result['sizes'] = (frame_lower['sizes'] * (1.0 - t) + frame_upper['sizes'] * t)
         
