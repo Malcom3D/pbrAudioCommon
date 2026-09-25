@@ -107,60 +107,32 @@ class ParticlesInterpolator:
         try:
             import numba as nb
             
-#            @nb.jit(nopython=True, parallel=True, cache=True)
-#            def _interpolate_positions_numba(pos0, pos1, posU, tU, t):
-#                n = pos0.shape[0]
-#                result = np.zeros_like(pos0)
-#                alpha = np.zeros(n, dtype=np.float64)
-#                if posU.shape[0] > 0:
-#                    less_mask = tU <= t
-#                    if np.count_nonzero(less_mask) > 0:
-#                        zero_mask = tU[less_mask] > 0.0
-#                        alpha[less_mask] = 1.0
-#                        alpha[less_mask][zero_mask] = t / tU[less_mask][zero_mask]
-#                        result[less_mask] = pos0 * (1.0 - alpha[:, np.newaxis]) + posU * alpha[:, np.newaxis]
-#
-#                    great_mask = tU > t
-#                    if np.count_nonzero(great_mask) > 0:
-#                        alpha[great_mask] = 0.0
-#                        denom = 1.0 - alpha[great_mask]
-#                        denom_mask = denom > 0.0
-#                        alpha[great_mask][denom_mask] = (t - tU[great_mask][denom_mask]) / denom[denom_mask]
-#                        result[great_mask] = pos0 * (1.0 - alpha[:, np.newaxis]) + posU * alpha[:, np.newaxis]
-
-#                n = pos0.shape[0]
-#                result = np.zeros_like(pos0)
-#                if posU.shape[0] > 0:
-#                    for i in nb.prange(n):
-#                        if tU[i] <= t:
-#                            if tU[i] > 0.0:
-#                                alpha = t / tU[i]
-#                            else:
-#                                alpha = 1.0
-#                        else:
-#                            alpha = 0.0
-#                        result[i] = pos0[i] * (1.0 - alpha) + posU[i] * alpha
- 
-#                        t_i = tU[i]
-#                        if t <= t_i:
-#                            alpha[i] = 1.0
-#                            if t_i > 0.0:
-#                                alpha[i] = t / t_i
-#                            for j in range(3):
-#                                result[i, j] = pos0[i, j] * (1.0 - alpha) + posU[i, j] * alpha
-#                        elif t > t_i:
-#                            denom = 1.0 - t_i
-#                            alpha = 0.0
-#                            if denom > 0.0:
-#                                alpha = (t - t_i) / denom
-#                            for j in range(3):
-#                                result[i, j] = posU[i, j] * (1.0 - alpha) + pos1[i, j] * alpha
-#                else:
-#                    result = np.empty_like(pos0)
-#                    for i in nb.prange(pos0.shape[0]):
-#                        for j in range(3):
-#                            result[i, j] = pos0[i, j] * (1.0 - t) + pos1[i, j] * t
-#                return result
+            @nb.jit(nopython=True, parallel=True, cache=True)
+            def _interpolate_positions_numba(pos0, pos1, posU, tU, t):
+                n = pos0.shape[0]
+                result = np.zeros_like(pos0)
+                if posU.shape[0] > 0:
+                    for i in nb.prange(n):
+                        if tU[i] <= t:
+                            if tU[i] > 0.0:
+                                alpha = t / tU[i]
+                            else:
+                                alpha = 1.0
+                            for j in range(3):
+                                result[i, j] = pos0[i, j] * (1.0 - alpha) + posU[i, j] * alpha
+                        elif tU[i] > t:
+                            alpha = 0.0
+                            denom = 1.0 - tU[i]
+                            if denom > 0.0:
+                                alpha = (t - tU[i]) / denom
+                            for j in range(3):
+                                result[i, j] = posU[i, j] * (1.0 - alpha) + pos1[i, j] * alpha
+                else:
+                    result = np.empty_like(pos0)
+                    for i in nb.prange(pos0.shape[0]):
+                        for j in range(3):
+                            result[i, j] = pos0[i, j] * (1.0 - t) + pos1[i, j] * t
+                return result
 
 #            @nb.jit(nopython=True, parallel=True, cache=True)
 #            def _interpolate_sizes_numba(size0, size1, sizeU, tU, t):
@@ -340,7 +312,7 @@ class ParticlesInterpolator:
                 
                 return result
            
-#            self._interp_pos_numba = _interpolate_positions_numba
+            self._interp_pos_numba = _interpolate_positions_numba
             self._interp_size_numba = _interpolate_sizes_numba
             self._interp_quat_numba = _interpolate_quaternions_numba
             
@@ -348,28 +320,28 @@ class ParticlesInterpolator:
             warnings.warn("Numba not available, using NumPy only")
             self.use_numba = False
 
-    def _interp_pos_numba(self, pos0, pos1, posU, tU, t):
-        n = pos0.shape[0]
-        result = np.zeros_like(pos0)
-        alpha = np.zeros(n, dtype=np.float64)
-        if posU.shape[0] > 0:
-            less_mask = tU <= t
-            if np.count_nonzero(less_mask) > 0:
-                zero_mask = tU[less_mask] > 0.0
-                alpha[less_mask] = 1.0
-                alpha[less_mask][zero_mask] = t / tU[less_mask][zero_mask]
-                result[less_mask] = pos0 * (1.0 - alpha[:, np.newaxis]) + posU * alpha[:, np.newaxis]
-
-            great_mask = tU > t
-            if np.count_nonzero(great_mask) > 0:
-                alpha[great_mask] = 0.0
-                denom = 1.0 - alpha[great_mask]
-                denom_mask = denom > 0.0
-                alpha[great_mask][denom_mask] = (t - tU[great_mask][denom_mask]) / denom[denom_mask]
-                result[great_mask] = pos0 * (1.0 - alpha[:, np.newaxis]) + posU * alpha[:, np.newaxis]
-        else:
-            result = pos0 * (1.0 - t) + pos1 * t
-        return result
+#    def _interp_pos_numba(self, pos0, pos1, posU, tU, t):
+#        n = pos0.shape[0]
+#        result = np.zeros_like(pos0)
+#        alpha = np.zeros(n, dtype=np.float64)
+#        if posU.shape[0] > 0:
+#            less_mask = tU <= t
+#            if np.count_nonzero(less_mask) > 0:
+#                zero_mask = tU[less_mask] > 0.0
+#                alpha[less_mask] = 1.0
+#                alpha[less_mask][zero_mask] = t / tU[less_mask][zero_mask]
+#                result[less_mask] = pos0 * (1.0 - alpha[:, np.newaxis]) + posU * alpha[:, np.newaxis]
+#
+#            great_mask = tU > t
+#            if np.count_nonzero(great_mask) > 0:
+#                alpha[great_mask] = 0.0
+#                denom = 1.0 - alpha[great_mask]
+#                denom_mask = denom > 0.0
+#                alpha[great_mask][denom_mask] = (t - tU[great_mask][denom_mask]) / denom[denom_mask]
+#                result[great_mask] = pos0 * (1.0 - alpha[:, np.newaxis]) + posU * alpha[:, np.newaxis]
+#        else:
+#            result = pos0 * (1.0 - t) + pos1 * t
+#        return result
     
     def _discover_frames(self):
         """Discover available frame files in the data directory."""
