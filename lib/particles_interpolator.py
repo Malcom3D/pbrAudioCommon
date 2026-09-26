@@ -780,16 +780,6 @@ class ParticlesInterpolator:
         """Get the number of particles in the system."""
         return self._particle_count
 
-    def get_sampled_frames(self, as_samples: bool = True):
-        config = self.entity_manager.get('config')
-        fps = config.system.fps
-        fps_base = config.system.fps_base
-        subframes = config.system.subframes
-        sample_rate = config.system.sample_rate
-        sfps = (fps / fps_base) * subframes
-
-        return self._frames if not as_samples else self._frames * sample_rate / sfps
-
     def get_frame_range(self) -> Tuple[int, int]:
         """Get the valid frame range."""
         if len(self._frames) == 1:
