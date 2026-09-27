@@ -70,10 +70,10 @@ class AcousticCoefficients:
             phase_interp_func = self.phases_interpolator.interp_func
  
         # Process all bands in parallel
-        return _compute_band_averages(freq_bands, n_bands, num_points, coeff_interp_func, phase_interp_func, avg_coeffs, avg_phases)
+        return AcousticCoefficients._compute_band_averages(freq_bands, n_bands, num_points, coeff_interp_func, phase_interp_func, avg_coeffs, avg_phases)
 
     @staticmethod
-    @nb.njit(parallel=True, fastmath=True, cache=True)
+#    @nb.njit(parallel=True, fastmath=True, cache=True)
     def _compute_band_averages(freq_bands: np.ndarray, n_bands: int, num_points: int, coeff_interp_func, phase_interp_func, avg_coeffs: np.ndarray, avg_phases: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
         for i in nb.prange(n_bands):
             low_freq, high_freq = freq_bands[i]
