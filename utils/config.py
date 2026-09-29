@@ -68,13 +68,15 @@ class SystemConfig:
 class StorageConfig:
     """Configuration for the pbrAudioStorage module."""
     backend: str = "blosc2"  # "blosc2" or "zarr"
-    cache_path: str = "./pbrAudioCache/storage/"
+    root_path: str = "./pbrAudioCache/storage/"
     # Blosc2 specific
     blosc2_codec: str = "ZSTD"
     blosc2_clevel: int = 5
-    blosc2_filters: List[str] = field(default_factory=lambda: ["SHUFFLE"])
+    blosc2_filters: List[str] = field(default_factory=lambda: ["NOFILTER"])
+    blosc2_cparams_threads: int = 8
+    blosc2_dparams_threads: int = 16
     # Zarr specific
-    zarr_store_store_kwargs: Dict[str, Any] = field(default_factory=dict)
+    zarr_store_kwargs: Dict[str, Any] = field(default_factory=dict)
     # Processing
     chunk_size_samples: int = 1 << 16  # 65536 samples per chunk
 
