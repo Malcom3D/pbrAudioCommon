@@ -311,7 +311,7 @@ class Config:
             self.data = json.load(f)
 
         self.system = SystemConfig(**self.data.get('system', {}))
-        self.system = StorageConfig(**self.data.get('storage', {}))
+        self.storage = StorageConfig(**self.data.get('storage', {}))
         self.trajectory_postprocess = TrajectoryPostProcessConfig(**self.data.get('trajectory_postprocess', {}))
         self.denoiser = DenoiserConfig(**self.data.get('denoiser', {}))
         self.postprocess = PostProcessConfig(**self.data.get('postprocess', {}))
