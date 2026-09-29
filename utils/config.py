@@ -76,7 +76,7 @@ class StorageConfig:
     # Zarr specific
     zarr_store_store_kwargs: Dict[str, Any] = field(default_factory=dict)
     # Processing
-    chunk_size_samples:: int = 1 << 16  # 65536 samples per chunk
+    chunk_size_samples: int = 1 << 16  # 65536 samples per chunk
 
 @dataclass
 class TrajectoryPostProcessConfig:
