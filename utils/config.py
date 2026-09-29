@@ -65,6 +65,20 @@ class SystemConfig:
     debug: bool = False
 
 @dataclass
+class StorageConfig:
+    """Configuration for the pbrAudioStorage module."""
+    backend: str = "blosc2"  # "blosc2" or "zarr"
+    cache_path: str = "./pbrAudioCache/storage/"
+    # Blosc2 specific
+    blosc2_codec: str = "ZSTD"
+    blosc2_clevel: int = 5
+    blosc2_filters: List[str] = field(default_factory=lambda: ["SHUFFLE"])
+    # Zarr specific
+    zarr_store_store_kwargs: Dict[str, Any] = field(default_factory=dict)
+    # Processing
+    chunk_size_samples:: int = 1 << 16  # 65536 samples per chunk
+
+@dataclass
 class TrajectoryPostProcessConfig:
     # Detection parameters
     bounce_threshold: float = 0.001  # Minimum displacement for bounce detection (meters)
@@ -297,6 +311,7 @@ class Config:
             self.data = json.load(f)
 
         self.system = SystemConfig(**self.data.get('system', {}))
+        self.system = StorageConfig(**self.data.get('storage', {}))
         self.trajectory_postprocess = TrajectoryPostProcessConfig(**self.data.get('trajectory_postprocess', {}))
         self.denoiser = DenoiserConfig(**self.data.get('denoiser', {}))
         self.postprocess = PostProcessConfig(**self.data.get('postprocess', {}))
