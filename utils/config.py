@@ -34,6 +34,7 @@ class SystemConfig:
     subframes: int = 1 # video subframes
     file_format: str = 'RAW'
     cache_path: str = "./pbrAudioCache/"
+    enable_noise_enhancement: bool = True
     # physicsSolver only
     collision_margin: float = 0.05
     samples_per_object: int = 1000
