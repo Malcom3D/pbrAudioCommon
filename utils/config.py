@@ -35,7 +35,9 @@ class SystemConfig:
     subframes: int = 1 # video subframes
     file_format: str = 'RAW'
     cache_path: str = "./pbrAudioCache/"
-    enable_noise_enhancement: bool = True
+    total_frames: int = None
+    start_frame: int = None
+    end_frame: int = None
     # physicsSolver only
     collision_margin: float = 0.05
     samples_per_object: int = 1000
@@ -44,13 +46,12 @@ class SystemConfig:
     enable_denoiser: bool = False
     enable_trajectory_postprocess: bool = False
     # rigidBody only
+    enable_noise_enhancement: bool = True
     modal_modes: int = 20
     voxel_size: float = 0.01
     enable_postprocess: bool = False
     enable_proxy_synth: bool = False
     # pbrAudioRay only
-    start_frame: int = None
-    end_frame: int = None
     output_format: str = 'AMBISONIC'
     surround_format: str = None
     enable_vog: bool = False
