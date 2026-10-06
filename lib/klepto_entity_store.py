@@ -266,7 +266,7 @@ class KleptoEntityStore:
         else:
             # Plain numpy path — still SIMD, still fast for small payloads.
             offset = 0
-            for a in in arrays:
+            for a in arrays:
                 n = a.shape[0]
                 buf[offset:offset + n] = a
                 offset += n
@@ -446,7 +446,7 @@ class KleptoEntityStore:
         if idx not in per:
             return False
         info = per.pop(idx)
-        if info info["format"] == "packed":
+        if info["format"] == "packed":
             packed_dir = os.path.join(self._archive_path(entity), "_packed")
             for suffix in (".npz", ".meta.pkl"):
                 p = os.path.join(packed_dir, f"{idx}{suffix}")
@@ -476,7 +476,7 @@ class KleptoEntityStore:
 
     # --------------------------------------------------- EntityManager bridge
 
-    def dump_entity_manager(self, entity_manager_manager: Any, entities: Optional[Tuple[str, ...]] = None) -> None:
+    def dump_entity_manager(self, entity_manager: Any, entities: Optional[Tuple[str, ...]] = None) -> None:
         """
         Persist every registered entity from an EntityManager.
 
