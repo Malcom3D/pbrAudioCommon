@@ -153,3 +153,60 @@ class EntityManager:
                         if idx in entities.keys():
                             del entities[idx]
                             return entities
+
+    def dump(self, is_score_track_final: bool = False):
+        # Ensure directory exists
+        trajectories_dir = f"{config.system.cache_path}/trajectories"
+        collisions_dir = f"{self._config.system.cache_path}/collisions"
+        forces_dir = f"{self._config.system.cache_path}/forces_data"
+        modalvertices_dir = f"{self._config.system.cache_path}/modalvertices"
+        scoretracks_dir = f"{self._config.system.cache_path}/scoretracks"
+
+        os.makedirs(trajectories_dir, exist_ok=True)
+        os.makedirs(collisions_dir, exist_ok=True)
+        os.makedirs(modalvertices_dir, exist_ok=True)
+        os.makedirs(scoretracks_dir, exist_ok=True)
+        os.makedirs(forces_dir, exist_ok=True)
+
+        # Save forces data
+        for force_idx in self._forces.keys():
+            if isinstance(self._forces[force_idx], ForceDataSequence):
+                force_obj_idx = self._forces[force_idx].obj_idx
+                force_other_obj_idx = self._forces[force_idx].other_obj_idx
+                self._forces[force_idx].save(f"{self.forces_dir}/{force_obj_idx:05d}_{force_other_obj_idx:05d}.pkl")
+        print('Saved force data: ', len(self._forces))
+
+        # Save collision data
+        for c_idx in self._collisions.keys():
+            self._collisions[c_idx].save(f"{self.collisions_dir}/{c_idx:05d}.pkl")
+        print('Saved collisions: ', len(self._collisions))
+
+        # Save modal vertices data
+        for m_idx in self._modal_vertices.keys():
+            self._modal_vertices[m_idx].save(f"{self.modalvertices_dir}/{m_idx:05d}.json")
+        print('Saved modal_vertices: ', len(self._modal_vertices))
+
+        if not is_score_track_final:
+            # Save score tracks data
+            for s_idx in self._score_tracks.keys():
+                self._score_tracks[s_idx].save(f"{self.scoretracks_dir}/{s_idx:05d}.tar.gz")
+            print('Saved score_tracks: ', len(self._score_tracks))
+        elif is_score_track_final:
+            # Save score tracks data in /tmp
+            n_score = []
+            for s_idx in self._score_tracks.keys():
+                if self._score_tracks[s_idx].is_final:
+                    self._score_tracks[s_idx].save(f"/tmp/{s_idx:05d}.tar.gz")
+                    n_score += [f"/tmp/{s_idx:05d}.tar.gz"]
+
+            # Clean score tracks data
+            if os.path.exists(self.scoretracks_dir):
+                filenames = os.listdir(self.scoretracks_dir)
+                for filename in filenames:
+                    if os.path.isfile(f"{self.scoretracks_dir}/{filename}"):
+                        os.remove(f"{self.scoretracks_dir}/{filename}")
+
+            # Move score tracks data files from /tmp
+            for filename in n_score:
+                shutil.move(filename, f"{self.scoretracks_dir}/{filename.removeprefix('/tmp/')}")
+            print('Saved final score_tracks: ', len(n_score))
