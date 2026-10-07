@@ -523,16 +523,35 @@ class KleptoEntityStore:
         for entity in entities:
             idxs = self.keys(entity)
             if not idxs:
+                debug_print(f"No persisted data for entity '{entity}'")
                 continue
 
-            loaded = self.get_many(entity, idxs)
-            for idx, obj in loaded.items():
-                if obj is None:
-                    continue
-                try:
-                    entity_manager.register(entity, obj)
-                except Exception as e:
-                    debug_print(f"register {entity}/{idx} failed: {e}")
+        loaded = self.get_many(entity, idxs)
+        entity_loaded = 0
+        entity_failed = 0
+        total_loaded = 0
+        total_failed = 0
+        for idx, obj in loaded.items():
+            if obj is None:
+                debug_print(f"Skipping {entity}/{idx}: None")
+                entity_failed += 1
+                continue
+            try:
+                result = entity_manager.register(entity, obj)
+                if result is None:
+                    debug_print(f"register {entity}/{idx} returned None (no match)")
+                    entity_failed += 1
+                else:
+                    entity_loaded += 1
+            except Exception as e:
+                debug_print(f"register {entity}/{idx} failed: {e}")
+                entity_failed += 1
+
+        debug_print(f"Loaded {entity_loaded}/{len(idxs)} entries for entity '{entity}'")
+        total_loaded += entity_loaded
+        total_failed += entity_failed
+
+        debug_print(f"KleptoEntityStore.load_into_entity_manager: total_loaded={total_loaded}, total_failed={total_failed}")
 
     def flush(self) -> None:
         """Force any cached archives to disk. No-op when cached=False."""
