@@ -68,27 +68,10 @@ class SystemConfig:
     debug: bool = False
 
 @dataclass
-class StorageConfig:
-    """Configuration for the pbrAudioStorage module."""
-    backend: str = "blosc2"  # "blosc2" or "zarr"
-    root_path: str = "./pbrAudioCache/storage/"
-    # Blosc2 specific
-    blosc2_codec: str = "ZSTD"
-    blosc2_clevel: int = 5
-    blosc2_filters: List[str] = field(default_factory=lambda: ["NOFILTER"])
-    blosc2_cparams_threads: int = 8
-    blosc2_dparams_threads: int = 16
-    # Zarr specific
-    zarr_store_kwargs: Dict[str, Any] = field(default_factory=dict)
-    # Processing
-    chunk_size_samples: int = 1 << 16  # 65536 samples per chunk
-    klepto_config: KleptoEntityStoreConfig = None
-
-@dataclass
 class KleptoEntityStoreConfig:
     """Tuning knobs for KleptoEntityStore."""
     # Root directory for the persistent store.
-    root_path: str = "./pbrAudioCache/entity_store"
+    root_path: str = "entity_store" 
     # klepto archive type: 'file' (one pickle per key) or 'dir' (dir per key).
     # 'file' is faster for many small objects; 'dir' for a few very large ones.
     archive_kind: str = "file"
@@ -104,6 +87,23 @@ class KleptoEntityStoreConfig:
     numba_min_bytes: int = 1 << 16  # 64 KiB
     # fsync per write? Slower but crash-safe.
     fsync: bool = True
+
+@dataclass
+class StorageConfig:
+    """Configuration for the pbrAudioStorage module."""
+    backend: str = "blosc2"  # "blosc2" or "zarr"
+    root_path: str = "./pbrAudioCache/storage/"
+    # Blosc2 specific
+    blosc2_codec: str = "ZSTD"
+    blosc2_clevel: int = 5
+    blosc2_filters: List[str] = field(default_factory=lambda: ["NOFILTER"])
+    blosc2_cparams_threads: int = 8
+    blosc2_dparams_threads: int = 16
+    # Zarr specific
+    zarr_store_kwargs: Dict[str, Any] = field(default_factory=dict)
+    # Processing
+    chunk_size_samples: int = 1 << 16  # 65536 samples per chunk
+    klepto_storage: KleptoEntityStoreConfig = None
 
 @dataclass
 class TrajectoryPostProcessConfig:
@@ -351,9 +351,9 @@ class Config:
 
         # Handle blosc2 audio storage with nested klepto EntityStorage
         audio_storage = self.data.get('storage', {})
-        klepto_storage = audio_storage.get('klepto_entity_storage', {})
-        self.storage = StorageConfig(**{k: v for k, v in  audio_storage.items() if k != 'klepto_entity_storage'},
-            klepto_entity_storage=self._create_klepto_storage(klepto_storage) if klepto_storage else None
+        klepto_storage = audio_storage.get('klepto_storage', {})
+        self.storage = StorageConfig(**{k: v for k, v in  audio_storage.items() if k != 'klepto_storage'},
+            klepto_storage=self._create_klepto_storage(klepto_storage) if klepto_storage else None
         )
 
         # Handle acoustic domain with nested acoustic_shader
@@ -487,7 +487,7 @@ class Config:
             phases=np.array(response_data.get('phases', [])) if 'phases' in response_data else None
         )
 
-    def _create_klepto_storage(self, klepto_storage: Dict[str, Any]) -> KleptoEntityStoreConfig):
+    def _create_klepto_storage(self, klepto_storage: Dict[str, Any]) -> KleptoEntityStoreConfig:
         """Create KleptoEntityStoreConfig instance from dictionary data"""
         return KleptoEntityStoreConfig(
             root_path=klepto_storage.get('root_path', 'storage'),
