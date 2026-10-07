@@ -156,15 +156,9 @@ class EntityManager:
                             return entities
 
     def dump(self, is_score_track_final: bool = False):
-        from ..lib.klepto_entity_store import KleptoEntityStore, KleptoEntityStoreConfig
+        from ..lib.klepto_entity_store import KleptoEntityStore
 
         config = self._singleton['config']
-        store = KleptoEntityStore(KleptoEntityStoreConfig(
-            root=f"{config.system.cache_path}/entity_store",
-            archive_kind="file",
-            cached=False,
-            use_numba_packing=True,
-            debug=config.system.debug,
-        ))
+        store = KleptoEntityStore(config=config)
         store.dump_entity_manager(self)
         store.close()
