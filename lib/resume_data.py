@@ -51,7 +51,30 @@ class ResumeData:
     def load_data(self):
         config = self.entity_manager.get('config')
         store = KleptoEntityStore(config)
-        store.load_into_entity_manager(self.entity_manager)
+
+        # The list of entities to load is defined in the the store itself.
+        entities_to_load = store.DEFAULT_ENTITIES
+        
+        for entity_name in entities_to_load:
+            # Get all the indices (keys) for the given entity from the store's metadata.
+            keys = store.keys(entity_name)
+            if not keys:
+                continue
+
+            # Load all objects for that entity in one go.
+            loaded_objects = store.get_many(entity_name, keys)
+
+            # Iterate over the loaded objects and register each one with the EntityManager.
+            for idx, obj in loaded_objects.items():
+                if obj is not None:
+                    try:
+                        self.entity_manager.register(entity_name, obj)
+                        debug_print(f"{entity_name}/{idx} registered from resume data")
+                    except Exception as e:
+                        # It's good practice to log this, but we'll use debug_print
+                        from ..lib.debug_utils import debug_print
+                        debug_print(f"Failed to register {entity_name}/{idx} from resume data: {e}")
+
         store.close()
 
 #    def load_data(self):
