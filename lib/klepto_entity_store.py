@@ -28,21 +28,14 @@ import numba as nb
 import klepto
 from dask import delayed, compute
 
-## Synchronous scheduler only — no threads, no processes.
-#dask_config.set(scheduler="synchronous")
+import blosc2
 
-# Configure Dask to use more threads
 from dask import config as dask_config
-#dask_config.set(scheduler='processes', num_workers=1024)
 dask_config.set({'num_workers': 1024, 'optimization.fuse.active': True, 'optimization.fuse.max_depth': 10,})
 
 from ..utils.config import Config
 from ..lib.debug_utils import debug_print, set_debug, set_debug_prefix
 
-
-# ---------------------------------------------------------------------------
-# Numba SIMD kernels — the only place heavy numeric work happens.
-# ---------------------------------------------------------------------------
 
 @nb.njit(cache=True, fastmath=True, nogil=True, parallel=False)
 def _pack_float32_arrays(arrays: List[np.ndarray], out: np.ndarray) -> int:
@@ -102,10 +95,6 @@ def _hash_bytes(buf: np.ndarray) -> np.uint64:
     return h
 
 
-# ---------------------------------------------------------------------------
-# The store
-# ---------------------------------------------------------------------------
-
 class KleptoEntityStore:
     """
     Persistent, klepto-backed store for EntityManager dumps.
@@ -148,8 +137,6 @@ class KleptoEntityStore:
         self._meta_path = os.path.join(self.root, "meta.json")
         self._load_meta()
 
-    # ------------------------------------------------------------------ meta
-
     def _load_meta(self) -> None:
         if os.path.exists(self._meta_path):
             try:
@@ -170,10 +157,8 @@ class KleptoEntityStore:
         # Atomic-ish write: write to tmp then rename.
         tmp = self._meta_path + ".tmp"
         with open(tmp, "wb") as f:
-            pickle.d.dump(self._meta, f, protocol=pickle.HIGHEST_PROTOCOL)
+            pickle.dump(self._meta, f, protocol=pickle.HIGHEST_PROTOCOL)
         os.replace(tmp, self._meta_path)
-
-    # --------------------------------------------------------------- archives
 
     def _archive_path(self, entity: str) -> str:
         return os.path.join(self.root, entity)
@@ -190,14 +175,11 @@ class KleptoEntityStore:
         # what we want for a large scene with many small objects.
         archive = klepto.archives.file_archive(
             path,
-            dict=dict,
             serialized=True,   # pickle values on disk
             cached=self.config.cached,
         )
         self._archives[entity] = archive
         return archive
-
-    # ------------------------------------------------------------- packing
 
     @staticmethod
     def _is_float_array_collection(obj: Any) -> bool:
@@ -250,7 +232,23 @@ class KleptoEntityStore:
             offset += L
         return out
 
-    # ------------------------------------------------------------- put / get
+    @staticmethod
+    def _blosc2_to_numpy(obj: Any) -> Any:
+        """Recursively converts blosc2.NDArray objects to numpy arrays in a container."""
+        if isinstance(obj, blosc2.NDArray):
+            return obj[:]
+        if isinstance(obj, list):
+            return [KleptoEntityStore._blosc2_to_numpy(item) for item in obj]
+        if isinstance(obj, tuple):
+            return tuple(KleptoEntityStore._blosc2_to_numpy(item) for item in obj)
+        if isinstance(obj, dict):
+            return {key: KleptoEntityStore._blosc2_to_numpy(value) for key, value in obj.items()}
+        if hasattr(obj, '__dataclass_fields__'):
+            # For dataclasses, we need to convert the fields in place.
+            for field_name in obj.__dataclass_fields__:
+                field_value = getattr(obj, field_name)
+                setattr(obj, field_name, KleptoEntityStore._blosc2_to_numpy(field_value))
+        return obj
 
     @delayed
     def _delayed_write_pickle(self, entity: str, idx: int, obj: Any) -> Tuple[str, int, int]:
@@ -439,8 +437,6 @@ class KleptoEntityStore:
         self._archives.pop(entity, None)
         self._save_meta()
 
-    # --------------------------------------------------- EntityManager bridge
-
     def dump_entity_manager(self, entity_manager: Any, entities: Optional[Tuple[str, ...]] = None) -> None:
         """
         Persist every registered entity from an EntityManager.
@@ -466,7 +462,11 @@ class KleptoEntityStore:
                 continue
 
             # Bulk write: build one dask graph per entity.
-            items = [(int(k), v) for k, v in collection.items()]
+            items = []
+            for k, v in collection.items():
+                # Before putting, convert any blosc2 arrays to numpy arrays.
+                cleaned_v = self._blosc2_to_numpy(v)
+                items.append((int(k), cleaned_v))
             self.put_many(entity, items)
 
     def load_into_entity_manager(self, entity_manager: Any, entities: Optional[Tuple[str, ...]] = None) -> None:
@@ -491,8 +491,6 @@ class KleptoEntityStore:
                     entity_manager.register(entity, obj)
                 except Exception as e:
                     debug_print(f"register {entity}/{idx} failed: {e}")
-
-    # --------------------------------------------------------------- lifecycle
 
     def flush(self) -> None:
         """Force any cached archives to disk. No-op when cached=False."""
