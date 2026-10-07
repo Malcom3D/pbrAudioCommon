@@ -36,6 +36,7 @@ from dask import config as dask_config
 #dask_config.set(scheduler='processes', num_workers=1024)
 dask_config.set({'num_workers': 1024, 'optimization.fuse.active': True, 'optimization.fuse.max_depth': 10,})
 
+from ..utils.config import Config
 from ..lib.debug_utils import debug_print, set_debug, set_debug_prefix
 
 
@@ -131,7 +132,7 @@ class KleptoEntityStore:
     )
 
     def __init__(self, config: Config):
-        self.config = config.storage.klepto_entity_store
+        self.config = config.storage.klepto_storage
         self.root = os.path.abspath(self.config.root_path)
         os.makedirs(self.root, exist_ok=True)
 

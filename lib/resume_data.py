@@ -30,7 +30,8 @@ from ..lib.modal_vertices import ModalVertices
 from ..lib.score_data import ScoreTrack
 from ..lib.particles_trajectory_data import ParticlesTrajectoryData
 
-from ..lib.klepto_entity_store import KleptoEntityStore, KleptoEntityStoreConfig
+from ..lib.klepto_entity_store import KleptoEntityStore
+from ..utils.config import KleptoEntityStoreConfig
 
 @dataclass
 class ResumeData:
@@ -49,7 +50,7 @@ class ResumeData:
 
     def load_data(self):
         config = self.entity_manager.get('config')
-        store = KleptoEntityStore(KleptoEntityStoreConfig(root=f"{config.system.cache_path}/entity_store", cached=False, debug=config.system.debug,))
+        store = KleptoEntityStore(config)
         store.load_into_entity_manager(self.entity_manager)
         store.close()
 
