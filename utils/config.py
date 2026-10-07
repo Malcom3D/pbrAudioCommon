@@ -82,6 +82,28 @@ class StorageConfig:
     zarr_store_kwargs: Dict[str, Any] = field(default_factory=dict)
     # Processing
     chunk_size_samples: int = 1 << 16  # 65536 samples per chunk
+    klepto_config: KleptoEntityStoreConfig = None
+
+@dataclass
+class KleptoEntityStoreConfig:
+    """Tuning knobs for KleptoEntityStore."""
+    # Root directory for the persistent store.
+    root_path: str = "./pbrAudioCache/entity_store"
+    # klepto archive type: 'file' (one pickle per key) or 'dir' (dir per key).
+    # 'file' is faster for many small objects; 'dir' for a few very large ones.
+    archive_kind: str = "file"
+    # If True, klepto keeps an in-memory mirror of everything (fast reads,
+    # high memory). If False, every read hits disk (slow reads, low memory).
+    cached: bool = True
+    # Compress the pickle payloads? Trades CPU for disk.
+    compress: bool = False
+    # Use numba packing for float32/float64 array collections.
+    use_numba_packing: bool = True
+    # Minimum total bytes of a float array collection before we bother with
+    # the numba path (below this, plain pickle is faster).
+    numba_min_bytes: int = 1 << 16  # 64 KiB
+    # fsync per write? Slower but crash-safe.
+    fsync: bool = True
 
 @dataclass
 class TrajectoryPostProcessConfig:
@@ -316,7 +338,6 @@ class Config:
             self.data = json.load(f)
 
         self.system = SystemConfig(**self.data.get('system', {}))
-        self.storage = StorageConfig(**self.data.get('storage', {}))
         self.trajectory_postprocess = TrajectoryPostProcessConfig(**self.data.get('trajectory_postprocess', {}))
         self.denoiser = DenoiserConfig(**self.data.get('denoiser', {}))
         self.postprocess = PostProcessConfig(**self.data.get('postprocess', {}))
@@ -327,6 +348,13 @@ class Config:
         self.termination = TerminationConfig(**self.data.get('termination', {}))
         self.audio_recorder = AudioRecorderConfig(**self.data.get('audio_recorder', {}))
         self.ambisonic_render = AmbisonicRenderConfig(**self.data.get('ambisonic_render', {}))
+
+        # Handle blosc2 audio storage with nested klepto EntityStorage
+        audio_storage = self.data.get('storage', {})
+        klepto_storage = audio_storage.get('klepto_entity_storage', {})
+        self.storage = StorageConfig(**{k: v for k, v in  audio_storage.items() if k != 'klepto_entity_storage'},
+            klepto_entity_storage=self._create_klepto_storage(klepto_storage) if klepto_storage else None
+        )
 
         # Handle acoustic domain with nested acoustic_shader
         acoustic_domain_data = self.data.get('acoustic_domain', {})
@@ -457,4 +485,16 @@ class Config:
             frequencies=np.array(response_data.get('frequencies', [])),
             magnitude=np.array(response_data.get('magnitude', [])),
             phases=np.array(response_data.get('phases', [])) if 'phases' in response_data else None
+        )
+
+    def _create_klepto_storage(self, klepto_storage: Dict[str, Any]) -> KleptoEntityStoreConfig):
+        """Create KleptoEntityStoreConfig instance from dictionary data"""
+        return KleptoEntityStoreConfig(
+            root_path=klepto_storage.get('root_path', 'storage'),
+            archive_kind=klepto_storage.get('archive_kind', 'file'),
+            cached=klepto_storage.get('cached', False),
+            compress=klepto_storage.get('compress', False),
+            use_numba_packing=klepto_storage.get('use_numba_packing', False),
+            numba_min_bytes=klepto_storage.get('numba_min_bytes', 1 << 16),
+            fsync=klepto_storage.get('fsync', True),
         )

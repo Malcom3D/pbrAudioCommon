@@ -102,34 +102,6 @@ def _hash_bytes(buf: np.ndarray) -> np.uint64:
 
 
 # ---------------------------------------------------------------------------
-# Config
-# ---------------------------------------------------------------------------
-
-@dataclass
-class KleptoEntityStoreConfig:
-    """Tuning knobs for KleptoEntityStore."""
-    # Root directory for the persistent store.
-    root: str = "./pbrAudioCache/entity_store"
-    # klepto archive type: 'file' (one pickle per key) or 'dir' (dir per key).
-    # 'file' is faster for many small objects; 'dir' for a few very large ones.
-    archive_kind: str = "file"
-    # If True, klepto keeps an in-memory mirror of everything (fast reads,
-    # high memory). If False, every read hits disk (slow reads, low memory).
-    cached: bool = False
-    # Compress the pickle payloads? Trades CPU for disk.
-    compress: bool = False
-    # Use numba packing for float32/float64 array collections.
-    use_numba_packing: bool = True
-    # Minimum total bytes of a float array collection before we bother with
-    # the numba path (below this, plain pickle is faster).
-    numba_min_bytes: int = 1 << 16  # 64 KiB
-    # fsync per write? Slower but crash-safe.
-    fsync: bool = False
-    # Debug
-    debug: bool = False
-
-
-# ---------------------------------------------------------------------------
 # The store
 # ---------------------------------------------------------------------------
 
@@ -144,14 +116,6 @@ class KleptoEntityStore:
                 <idx>.pkl                   # one file per entity (klepto file_archive)
             <entity>/_packed/<idx>.npz      # numba-packed numeric payloads
             <entity>/_packed/<idx>.meta.pkl # shape/length metadata for the packed payload
-
-    The store is *append-friendly*: `put()` overwrites a single key's file,
-    leaving every other key untouched. This is the main reason we prefer
-    klepto.file_archive over a single big pickle.
-
-    Threading/multiprocessing are never used. Heavy numeric work is done by
-    numba `nogil` kernels; task structure is expressed with `dask.delayed`
-    under the synchronous scheduler.
     """
 
     # Entity names recognised by EntityManager.dump() / ResumeData.load_data().
@@ -166,12 +130,12 @@ class KleptoEntityStore:
         "resonance_synth",
     )
 
-    def __init__(self, config: KleptoEntityStoreConfig):
-        self.cfg = config
-        self.root = os.path.abspath(config.root)
+    def __init__(self, config: Config):
+        self.config = config.storage.klepto_entity_store
+        self.root = os.path.abspath(self.config.root_path)
         os.makedirs(self.root, exist_ok=True)
 
-        set_debug(config.debug)
+        set_debug(config.system.debug)
         set_debug_prefix(self.__class__.__name__)
 
         # One klepto archive per entity. Lazily created on first access.
@@ -227,7 +191,7 @@ class KleptoEntityStore:
             path,
             dict=dict,
             serialized=True,   # pickle values on disk
-            cached=self.cfg.cached,
+            cached=self.config.cached,
         )
         self._archives[entity] = archive
         return archive
@@ -258,7 +222,7 @@ class KleptoEntityStore:
         total = int(lengths.sum())
         buf = np.empty(total, dtype=dtype)
 
-        if self.cfg.use_numba_packing and buf.nbytes >= self.cfg.numba_min_bytes:
+        if self.config.use_numba_packing and buf.nbytes >= self.config.numba_min_bytes:
             if dtype == np.float32:
                 _pack_float32_arrays(arrays, buf)
             else:
@@ -294,7 +258,7 @@ class KleptoEntityStore:
         archive[str(idx)] = obj
         # klepto.file_archive writes on assignment when cached=False.
         # If cached=True, we must explicitly dump.
-        if self.cfg.cached:
+        if self.config.cached:
             archive.dump()
         # Record size on disk.
         fpath = os.path.join(self._archive_path(entity), f"{idx}.pkl")
@@ -340,14 +304,14 @@ class KleptoEntityStore:
         pickle path.
         """
         use_packed = (
-            self.cfg.use_numba_packing
+            self.config.use_numba_packing
             and self._is_float_array_collection(obj)
         )
 
         if use_packed:
             # Estimate total bytes to decide if packing is worth it.
             total_bytes = sum(a.nbytes for a in obj)
-            use_packed = total_bytes >= self.cfg.numba_min_bytes
+            use_packed = total_bytes >= self.config.numba_min_bytes
 
         if use_packed:
             task = self._delayed_write_packed(entity, idx, list(obj))
@@ -374,9 +338,9 @@ class KleptoEntityStore:
 
         for idx, obj in items:
             use_packed = (
-                self.cfg.use_numba_packing
+                self.config.use_numba_packing
                 and self._is_float_array_collection(obj)
-                and sum(a.nbytes for a in obj) >= self.cfg.numba_min_bytes
+                and sum(a.nbytes for a in obj) >= self.config.numba_min_bytes
             )
             if use_packed:
                 tasks.append(self._delayed_write_packed(entity, idx, list(obj)))
