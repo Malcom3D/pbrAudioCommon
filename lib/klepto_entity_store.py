@@ -430,7 +430,7 @@ class KleptoEntityStore:
             return self._unpack_float_arrays(buf, lengths)
 
         # pickle path
-        fpath = os.path.join(self._archive_path(entity), f"{idx}.pkl")
+        fpath = os.path.join(self._archive_path(entity), f"K_{idx}/output.pkl")
         if not os.path.exists(fpath):
             return None
         with open(fpath, "rb") as f:
@@ -526,30 +526,30 @@ class KleptoEntityStore:
                 debug_print(f"No persisted data for entity '{entity}'")
                 continue
 
-        loaded = self.get_many(entity, idxs)
-        entity_loaded = 0
-        entity_failed = 0
-        total_loaded = 0
-        total_failed = 0
-        for idx, obj in loaded.items():
-            if obj is None:
-                debug_print(f"Skipping {entity}/{idx}: None")
-                entity_failed += 1
-                continue
-            try:
-                result = entity_manager.register(entity, obj)
-                if result is None:
-                    debug_print(f"register {entity}/{idx} returned None (no match)")
+            loaded = self.get_many(entity, idxs)
+            entity_loaded = 0
+            entity_failed = 0
+            total_loaded = 0
+            total_failed = 0
+            for idx, obj in loaded.items():
+                if obj is None:
+                    debug_print(f"Skipping {entity}/{idx}: None")
                     entity_failed += 1
-                else:
-                    entity_loaded += 1
-            except Exception as e:
-                debug_print(f"register {entity}/{idx} failed: {e}")
-                entity_failed += 1
+                    continue
+                try:
+                    result = entity_manager.register(entity, obj)
+                    if result is None:
+                        debug_print(f"register {entity}/{idx} returned None (no match)")
+                        entity_failed += 1
+                    else:
+                        entity_loaded += 1
+                except Exception as e:
+                    debug_print(f"register {entity}/{idx} failed: {e}")
+                    entity_failed += 1
 
-        debug_print(f"Loaded {entity_loaded}/{len(idxs)} entries for entity '{entity}'")
-        total_loaded += entity_loaded
-        total_failed += entity_failed
+            debug_print(f"Loaded {entity_loaded}/{len(idxs)} entries for entity '{entity}'")
+            total_loaded += entity_loaded
+            total_failed += entity_failed
 
         debug_print(f"KleptoEntityStore.load_into_entity_manager: total_loaded={total_loaded}, total_failed={total_failed}")
 
