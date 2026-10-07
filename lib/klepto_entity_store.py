@@ -94,6 +94,44 @@ def _hash_bytes(buf: np.ndarray) -> np.uint64:
         h *= prime
     return h
 
+def _task_write_pickle(store, entity, idx, obj):
+    archive = store._get_archive(entity)
+    archive[str(idx)] = obj
+    # Always dump to be safe; harmless when cached=False
+    try:
+        archive.dump()
+    except Exception as e:
+        debug_print(f"archive.dump() failed for {entity}/{idx}: {e}")
+    fpath = os.path.join(store._archive_path(entity), f"{idx}.pkl")
+    size = os.path.getsize(fpath) if os.path.exists(fpath) else 0
+    return entity, idx, size
+
+
+def _task_write_packed(store, entity, idx, arrays):
+    packed_dir = os.path.join(store._archive_path(entity), "_packed")
+    os.makedirs(packed_dir, exist_ok=True)
+
+    buf, lengths, dtype_str = store._pack_float_arrays(arrays)
+    h = int(store._hash_bytes(buf.view(np.uint8)))
+
+    npz_path = os.path.join(packed_dir, f"{idx}.npz")
+    meta_path = os.path.join(packed_dir, f"{idx}.meta.pkl")
+
+    np.savez(npz_path, buf=buf, lengths=lengths)
+    with open(meta_path, "wb") as f:
+        pickle.dump(
+            {
+                "dtype": dtype_str,
+                "n_arrays": len(arrays),
+                "total_elems": int(buf.shape[0]),
+                "hash": h,
+            },
+            f,
+            protocol=pickle.HIGHEST_PROTOCOL,
+        )
+
+    size = os.path.getsize(npz_path) + os.path.getsize(meta_path)
+    return entity, idx, size
 
 class KleptoEntityStore:
     """
@@ -173,11 +211,14 @@ class KleptoEntityStore:
         # klepto.file_archive writes one pickle per key. `cached=False` means
         # no in-memory mirror: every `__getitem__` reads from disk. This is
         # what we want for a large scene with many small objects.
-        archive = klepto.archives.file_archive(
+        archive_cls = klepto.archives.dir_archive
+        archive = archive_cls(
             path,
             serialized=True,   # pickle values on disk
             cached=self.config.cached,
         )
+
+        archive.archive.keyencoding = 'utf-8'
         self._archives[entity] = archive
         return archive
 
@@ -313,10 +354,10 @@ class KleptoEntityStore:
             use_packed = total_bytes >= self.config.numba_min_bytes
 
         if use_packed:
-            task = self._delayed_write_packed(entity, idx, list(obj))
+            task = delayed(_task_write_packed)(self, entity, idx, list(obj))
             fmt = "packed"
         else:
-            task = self._delayed_write_pickle(entity, idx, obj)
+            task = delayed(_task_write_pickle)(self, entity, idx, obj)
             fmt = "pickle"
 
         # Synchronous scheduler: this runs in the calling thread, no
@@ -342,10 +383,10 @@ class KleptoEntityStore:
                 and sum(a.nbytes for a in obj) >= self.config.numba_min_bytes
             )
             if use_packed:
-                tasks.append(self._delayed_write_packed(entity, idx, list(obj)))
+                tasks.append(delayed(_task_write_packed)(self, entity, idx, list(obj)))
                 formats.append("packed")
             else:
-                tasks.append(self._delayed_write_pickle(entity, idx, obj))
+                tasks.append(delayed(_task_write_pickle)(self, entity, idx, obj))
                 formats.append("pickle")
             idxs.append(idx)
 
@@ -389,10 +430,11 @@ class KleptoEntityStore:
             return self._unpack_float_arrays(buf, lengths)
 
         # pickle path
-        archive = self._get_archive(entity)
-        if str(idx) not in archive:
+        fpath = os.path.join(self._archive_path(entity), f"{idx}.pkl")
+        if not os.path.exists(fpath):
             return None
-        return archive[str(idx)]
+        with open(fpath, "rb") as f:
+            return pickle.load(f)
 
     def get_many(self, entity: str, idxs: Iterable[int]) -> Dict[int, Any]:
         """

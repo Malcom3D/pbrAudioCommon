@@ -31,6 +31,7 @@ from .utils.config import Config, SystemConfig, AcousticDomainConfig, SourceConf
 
 from .lib.acoustic_shader import AcousticCoefficients, AcousticProperties, AcousticShader
 
+from .lib.klepto_entity_store import KleptoEntityStore
 from .lib.resume_data import ResumeData
 from .lib.frequency_bands import FrequencyBands
 from .lib.filter import LinkwitzRileyFilter
@@ -56,6 +57,7 @@ from .lib.debug_utils import debug_print, set_debug, set_debug_prefix, set_debug
 
 __all__ = [
     'EntityManager',
+    'KleptoEntityStore',
     'ResumeData',
     'Config',
     'SystemConfig',
