@@ -33,6 +33,8 @@ from ..lib.particles_trajectory_data import ParticlesTrajectoryData
 from ..lib.klepto_entity_store import KleptoEntityStore
 from ..utils.config import KleptoEntityStoreConfig
 
+from ..lib.debug_utils import debug_print, set_debug, set_debug_prefix
+
 @dataclass
 class ResumeData:
     entity_manager: EntityManager
@@ -40,6 +42,10 @@ class ResumeData:
     def __post_init__(self):
         config = self.entity_manager.get('config')
         self.status_dir = f"{config.system.cache_path}/status/{__class__.__name__}"
+
+        set_debug(config.system.debug)
+        set_debug_prefix(self.__class__.__name__)
+
 #        self.physical_core = config.system.physical_core
 #        self.collisions_dir = f"{config.system.cache_path}/collisions"
 #        self.trajectories_dir = f"{config.system.cache_path}/trajectories"
@@ -68,11 +74,10 @@ class ResumeData:
             for idx, obj in loaded_objects.items():
                 if obj is not None:
                     try:
-                        self.entity_manager.register(entity_name, obj)
+                        _ = self.entity_manager.register(entity_name, obj)
                         debug_print(f"{entity_name}/{idx} registered from resume data")
                     except Exception as e:
                         # It's good practice to log this, but we'll use debug_print
-                        from ..lib.debug_utils import debug_print
                         debug_print(f"Failed to register {entity_name}/{idx} from resume data: {e}")
 
         store.close()
