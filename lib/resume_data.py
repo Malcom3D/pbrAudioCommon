@@ -77,7 +77,6 @@ class ResumeData:
                         _ = self.entity_manager.register(entity_name, obj)
                         debug_print(f"{entity_name}/{idx} registered from resume data")
                     except Exception as e:
-                        # It's good practice to log this, but we'll use debug_print
                         debug_print(f"Failed to register {entity_name}/{idx} from resume data: {e}")
 
         store.close()
