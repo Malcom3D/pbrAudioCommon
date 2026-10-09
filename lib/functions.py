@@ -1001,3 +1001,13 @@ def _adjust_for_fracture_shard(start_samples, stop_samples, sample_rate, sfps, c
     start_samples = max(start_samples, shard_samples)
 
     return start_samples, stop_samples
+
+def _count_deep(items: List[Any]) -> int:
+    """Recursively count all non-list items in an arbitrarily nested list."""
+    total = 0
+    for item in items:
+        if isinstance(item, list):
+            total += count_deep(item)
+        else:
+            total += 1
+    return total
