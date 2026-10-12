@@ -1007,7 +1007,7 @@ def _count_deep(items: List[Any]) -> int:
     total = 0
     for item in items:
         if isinstance(item, list):
-            total += count_deep(item)
+            total += _count_deep(item)
         else:
             total += 1
     return total
