@@ -92,7 +92,7 @@ class KleptoEntityStoreConfig:
 class StorageConfig:
     """Configuration for the pbrAudioStorage module."""
     backend: str = "blosc2"  # "blosc2" or "zarr"
-    root_path: str = "./pbrAudioCache/storage/"
+    root_path: str = "./pbrAudioCache/storage"
     # Blosc2 specific
     blosc2_codec: str = "ZSTD"
     blosc2_clevel: int = 5
