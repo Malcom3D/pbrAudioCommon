@@ -22,7 +22,7 @@ import bz2
 import pickle
 import shutil
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Tuple, Iterable
+from typing import Any, Dict, List, Optional, Tuple, Iterable, Union
 
 import numpy as np
 import numba as nb
