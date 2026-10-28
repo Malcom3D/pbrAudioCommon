@@ -422,7 +422,7 @@ class KleptoEntityStore:
             and self._is_float_array_collection(obj)
         )
         if use_packed:
-            total_bytes = = sum(a.nbytes for a in obj)
+            total_bytes = sum(a.nbytes for a in obj)
             if total_bytes >= self.config.numba_min_bytes:
                 return "packed", list(obj), _delayed_write_packed
 
