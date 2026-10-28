@@ -18,6 +18,7 @@
 
 import os
 import gc
+import bz2
 import pickle
 import shutil
 from dataclasses import dataclass, field
@@ -36,6 +37,8 @@ dask_config.set({'num_workers': 1024, 'optimization.fuse.active': True, 'optimiz
 from ..utils.config import Config
 from ..lib.debug_utils import debug_print, set_debug, set_debug_prefix
 
+_BZ2_MAGIC = b"BZ2\x01"   # 4-byte tag: our own container format
+_BZ2_HEADER = _BZ2_MAGIC + b"\x00" * 4  # optional alignment padding
 
 @nb.njit(cache=True, fastmath=True, nogil=True, parallel=False)
 def _pack_float32_arrays(arrays: List[np.ndarray], out: np.ndarray) -> int:
@@ -99,6 +102,30 @@ def _atomic_pickle_dump(obj: Any, path: str) -> None:
     with open(tmp, "wb") as f:
         pickle.dump(obj, f, protocol=pickle.HIGHEST_PROTOCOL)
     os.replace(tmp, path)
+
+def _is_bz2_blob(obj: Any) -> bool:
+    """True if `obj` looks like a blob we produced with _pack_bz2()."""
+    try:
+        return isinstance(obj, (bytes, bytearray)) and bytes(obj[:4]) == _BZ2_MAGIC
+    except Exception:
+        return False
+
+def _pack_bz2(obj: Any, compresslevel: int = 9) -> bytes:
+    """
+    Pickle `obj` and bz2-compress it. The result is a self-describing
+    bytes blob prefixed with _BZ2_MAGIC so we can tell it apart from
+    raw pickles that klepto might otherwise write.
+    """
+    payload = pickle.dumps(obj, protocol=pickle.HIGHEST_PROTOCOL)
+    compressed = bz2.compress(payload, compresslevel=compresslevel)
+    return _BZ2_MAGIC + compressed
+
+
+def _unpack_bz2(blob: Union[bytes, bytearray]) -> Any:
+    """Inverse of _pack_bz2()."""
+    if not _is_bz2_blob(blob):
+        raise ValueError("Not a bz2 packed blob")
+    return pickle.loads(bz2.decompress(bytes(blob[4:])))
 
 def _task_write_pickle(store, entity, idx, obj):
     archive = store._get_archive(entity)
@@ -310,6 +337,19 @@ class KleptoEntityStore:
         return obj
 
     @delayed
+    def _delayed_write_bz2(self, entity: str, idx: int, obj: Any) -> Tuple[str, int, int]:
+        """Dask-delayed task: bz2-compress one object and store via klepto."""
+        archive = self._get_archive(entity)
+        blob = _pack_bz2(obj, compresslevel=self.config.bz2_compresslevel)
+        archive[str(idx)] = blob
+        if self.config.cached:
+            archive.dump()
+
+        fpath = os.path.join(self._archive_path(entity), f"{idx}.pkl")
+        size = os.path.getsize(fpath) if os.path.exists(fpath) else 0
+        return entity, idx, size
+
+    @delayed
     def _delayed_write_pickle(self, entity: str, idx: int, obj: Any) -> Tuple[str, int, int]:
         """Dask-delayed task: pickle one object to disk via klepto."""
         archive = self._get_archive(entity)
@@ -353,59 +393,56 @@ class KleptoEntityStore:
         size = os.path.getsize(npz_path) + os.path.getsize(meta_path)
         return entity, idx, size
 
-    def put(self, entity: str, idx: int, obj: Any) -> None:
+    def _pick_encoding(self, entity: str, obj: Any) -> Tuple[str, Any, Any]:
         """
-        Persist a single (entity, idx) -> obj.
+        Decide how to serialize `obj` for the given entity.
 
-        If obj is a list/tuple of 1D float arrays and is large enough, we
-        take the numba-packed fast path. Otherwise we fall back to klepto's
-        pickle path.
+        Returns (fmt, payload, task_builder) where:
+          fmt            : 'packed' | 'bz2' | 'pickle'
+          payload        : the object to hand to the writer (arrays list,
+                           the raw object, or the object itself)
+          task_builder   : callable(self, entity, idx, payload) -> delayed
         """
+        use_bz2 = (
+            entity in self.config.bz2_entities
+            and self.config.compress is not False   # let caller opt out
+        )
+
+        if use_bz2:
+            # Pre-check size (cheap) so tiny objects don't pay bz2 cost.
+            try:
+                approx_bytes = len(pickle.dumps(obj, protocol=pickle.HIGHEST_PROTOCOL))
+            except Exception:
+                approx_bytes = self.config.bz2_min_bytes  # compress anyway
+            if approx_bytes >= self.config.bz2_min_bytes:
+                return "bz2", obj, _delayed_write_bz2
+
         use_packed = (
             self.config.use_numba_packing
             and self._is_float_array_collection(obj)
         )
-
         if use_packed:
-            # Estimate total bytes to decide if packing is worth it.
-            total_bytes = sum(a.nbytes for a in obj)
-            use_packed = total_bytes >= self.config.numba_min_bytes
+            total_bytes = = sum(a.nbytes for a in obj)
+            if total_bytes >= self.config.numba_min_bytes:
+                return "packed", list(obj), _delayed_write_packed
 
-        if use_packed:
-            task = delayed(_task_write_packed)(self, entity, idx, list(obj))
-            fmt = "packed"
-        else:
-            task = delayed(_task_write_pickle)(self, entity, idx, obj)
-            fmt = "pickle"
+        return "pickle", obj, _delayed_write_pickle
 
-        # Synchronous scheduler: this runs in the calling thread, no
-        # threads/processes spawned.
+    def put(self, entity: str, idx: int, obj: Any) -> None:
+        fmt, payload, builder = self._pick_encoding(entity, obj)
+        task = delayed(builder)(self, entity, idx, payload)
         (ent, i, size), = compute(task)
 
         self._meta.setdefault(ent, {})[i] = {"format": fmt, "size": int(size)}
         self._save_meta()
 
     def put_many(self, entity: str, items: Iterable[Tuple[int, Any]]) -> None:
-        """
-        Persist many objects of the same entity. Builds one dask graph and
-        computes it synchronously. Good for bulk dumps.
-        """
-        tasks = []
-        formats: List[str] = []
-        idxs: List[int] = []
+        tasks, formats, idxs = [], [], []
 
         for idx, obj in items:
-            use_packed = (
-                self.config.use_numba_packing
-                and self._is_float_array_collection(obj)
-                and sum(a.nbytes for a in obj) >= self.config.numba_min_bytes
-            )
-            if use_packed:
-                tasks.append(delayed(_task_write_packed)(self, entity, idx, list(obj)))
-                formats.append("packed")
-            else:
-                tasks.append(delayed(_task_write_pickle)(self, entity, idx, obj))
-                formats.append("pickle")
+            fmt, payload, builder = self._pick_encoding(entity, obj)
+            tasks.append(delayed(builder)(self, entity, idx, payload))
+            formats.append(fmt)
             idxs.append(idx)
 
         if not tasks:
@@ -415,6 +452,69 @@ class KleptoEntityStore:
         for (ent, i, size), fmt in zip(results, formats):
             self._meta.setdefault(ent, {})[i] = {"format": fmt, "size": int(size)}
         self._save_meta()
+
+#    def put(self, entity: str, idx: int, obj: Any) -> None:
+#        """
+#        Persist a single (entity, idx) -> obj.
+#
+#        If obj is a list/tuple of 1D float arrays and is large enough, we
+#        take the numba-packed fast path. Otherwise we fall back to klepto's
+#        pickle path.
+#        """
+#        use_packed = (
+#            self.config.use_numba_packing
+#            and self._is_float_array_collection(obj)
+#        )
+#
+#        if use_packed:
+#            # Estimate total bytes to decide if packing is worth it.
+#            total_bytes = sum(a.nbytes for a in obj)
+#            use_packed = total_bytes >= self.config.numba_min_bytes
+#
+#        if use_packed:
+#            task = delayed(_task_write_packed)(self, entity, idx, list(obj))
+#            fmt = "packed"
+#        else:
+#            task = delayed(_task_write_pickle)(self, entity, idx, obj)
+#            fmt = "pickle"
+#
+#        # Synchronous scheduler: this runs in the calling thread, no
+#        # threads/processes spawned.
+#        (ent, i, size), = compute(task)
+#
+#        self._meta.setdefault(ent, {})[i] = {"format": fmt, "size": int(size)}
+#        self._save_meta()
+
+#    def put_many(self, entity: str, items: Iterable[Tuple[int, Any]]) -> None:
+#        """
+#        Persist many objects of the same entity. Builds one dask graph and
+#        computes it synchronously. Good for bulk dumps.
+#        """
+#        tasks = []
+#        formats: List[str] = []
+#        idxs: List[int] = []
+#
+#        for idx, obj in items:
+#            use_packed = (
+#                self.config.use_numba_packing
+#                and self._is_float_array_collection(obj)
+#                and sum(a.nbytes for a in obj) >= self.config.numba_min_bytes
+#            )
+#            if use_packed:
+#                tasks.append(delayed(_task_write_packed)(self, entity, idx, list(obj)))
+#                formats.append("packed")
+#            else:
+#                tasks.append(delayed(_task_write_pickle)(self, entity, idx, obj))
+#                formats.append("pickle")
+#            idxs.append(idx)
+#
+#        if not tasks:
+#            return
+#
+#        results = compute(*tasks)
+#        for (ent, i, size), fmt in zip(results, formats):
+#            self._meta.setdefault(ent, {})[i] = {"format": fmt, "size": int(size)}
+#        self._save_meta()
 
     @staticmethod
     def _safe_pickle_load(path: str) -> Any:
@@ -459,9 +559,28 @@ class KleptoEntityStore:
                 buf = buf.astype(meta["dtype"])
             return self._unpack_float_arrays(buf, lengths)
 
-        # pickle path
+#        # pickle path
+#        fpath = os.path.join(self._archive_path(entity), f"K_{idx}/output.pkl")
+#        return self._safe_pickle_load(fpath)
+        # pickle / bz2 path
         fpath = os.path.join(self._archive_path(entity), f"K_{idx}/output.pkl")
-        return self._safe_pickle_load(fpath)
+        raw = self._safe_pickle_load(fpath)
+        if raw is None:
+            return None
+
+        # We may have written a raw blob via klepto directly (older entries
+        # or unfiltered loads) — handle both shapes.
+        if _is_bz2_blob(raw):
+            return _unpack_bz2(raw)
+
+        # Fallback: try klepto directly (in case meta was stale and file naming
+        # differs between klepto versions).
+        if info["["format"] == "bz2":
+            archive = self._get_archive(entity)
+            blob = archive[str(idx)]
+            if _is_bz2_blob(blob):
+                return _unpack_bz2(blob)
+        return raw
 
     def get_many(self, entity: str, idxs: Iterable[int]) -> Dict[int, Any]:
         """
