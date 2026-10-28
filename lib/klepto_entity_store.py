@@ -94,6 +94,12 @@ def _hash_bytes(buf: np.ndarray) -> np.uint64:
         h *= prime
     return h
 
+def _atomic_pickle_dump(obj: Any, path: str) -> None:
+    tmp = path + ".tmp"
+    with open(tmp, "wb") as f:
+        pickle.dump(obj, f, protocol=pickle.HIGHEST_PROTOCOL)
+    os.replace(tmp, path)
+
 def _task_write_pickle(store, entity, idx, obj):
     archive = store._get_archive(entity)
     archive[str(idx)] = obj
@@ -102,10 +108,22 @@ def _task_write_pickle(store, entity, idx, obj):
         archive.dump()
     except Exception as e:
         debug_print(f"archive.dump() failed for {entity}/{idx}: {e}")
-    fpath = os.path.join(store._archive_path(entity), f"{idx}.pkl")
+        raise
+
+    fpath = os.path.join(store._archive_path(entity), f"K_{idx}/output.pkl")
+    # Verify the pickle actually loads; if not, rewrite atomically.
+    try:
+        with open(fpath, "rb") as f:
+            pickle.load(f)
+    except Exception:
+        debug_print(f"Post-write verify failed for {entity}/{idx}, rewriting atomically")
+        tmp = fpath + ".tmp"
+        with open(tmp, "wb") as f:
+            pickle.dump(obj, f, protocol=pickle.HIGHEST_PROTOCOL)
+        os.replace(tmp, fpath)
+
     size = os.path.getsize(fpath) if os.path.exists(fpath) else 0
     return entity, idx, size
-
 
 def _task_write_packed(store, entity, idx, arrays):
     packed_dir = os.path.join(store._archive_path(entity), "_packed")
@@ -398,6 +416,18 @@ class KleptoEntityStore:
             self._meta.setdefault(ent, {})[i] = {"format": fmt, "size": int(size)}
         self._save_meta()
 
+    @staticmethod
+    def _safe_pickle_load(path: str) -> Any:
+        """Load a pickle, returning None if the file is missing or truncated."""
+        if not os.path.exists(path):
+            return None
+        try:
+            with open(path, "rb") as f:
+                return pickle.load(f)
+        except (pickle.UnpicklingError, EOFError, OSError, ValueError) as e:
+            debug_print(f"Corrupt/truncated pickle at {path}: {e}")
+            return None
+
     def get(self, entity: str, idx: int) -> Optional[Any]:
         """Load a single object. Returns None if not present."""
         per = self._meta.get(entity, {})
@@ -431,10 +461,7 @@ class KleptoEntityStore:
 
         # pickle path
         fpath = os.path.join(self._archive_path(entity), f"K_{idx}/output.pkl")
-        if not os.path.exists(fpath):
-            return None
-        with open(fpath, "rb") as f:
-            return pickle.load(f)
+        return self._safe_pickle_load(fpath)
 
     def get_many(self, entity: str, idxs: Iterable[int]) -> Dict[int, Any]:
         """
