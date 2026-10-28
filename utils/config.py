@@ -87,6 +87,12 @@ class KleptoEntityStoreConfig:
     numba_min_bytes: int = 1 << 16  # 64 KiB
     # fsync per write? Slower but crash-safe.
     fsync: bool = True
+    # Entities listed here will be pickled -> bz2-compressed before being
+    # handed to klepto. On read, the blob is decompressed and unpickled.
+    bz2_entities: Tuple[str, ...] = ("score_tracks",)
+    # Minimum payload size (bytes) before compressing.
+    bz2_min_bytes: int = 1 << 14      # 16 KiB
+    bz2_compresslevel: int = 9        # 1 (fast) .. 9 (best)
 
 @dataclass
 class StorageConfig:
@@ -488,7 +494,6 @@ class Config:
         )
 
     def _create_klepto_storage(self, klepto_storage: Dict[str, Any]) -> KleptoEntityStoreConfig:
-        """Create KleptoEntityStoreConfig instance from dictionary data"""
         return KleptoEntityStoreConfig(
             root_path=klepto_storage.get('root_path', 'storage'),
             archive_kind=klepto_storage.get('archive_kind', 'file'),
@@ -497,4 +502,7 @@ class Config:
             use_numba_packing=klepto_storage.get('use_numba_packing', False),
             numba_min_bytes=klepto_storage.get('numba_min_bytes', 1 << 16),
             fsync=klepto_storage.get('fsync', True),
+            bz2_entities=tuple(klepto_storage.get('bz2_entities', ("score_tracks",))),
+            bz2_min_bytes=klepto_storage.get('bz2_min_bytes', 1 << 14),
+            bz2_compresslevel=klepto_storage.get('bz2_compresslevel', 9),
         )
