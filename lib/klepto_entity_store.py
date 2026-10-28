@@ -575,7 +575,7 @@ class KleptoEntityStore:
 
         # Fallback: try klepto directly (in case meta was stale and file naming
         # differs between klepto versions).
-        if info["["format"] == "bz2":
+        if info["format"] == "bz2":
             archive = self._get_archive(entity)
             blob = archive[str(idx)]
             if _is_bz2_blob(blob):
