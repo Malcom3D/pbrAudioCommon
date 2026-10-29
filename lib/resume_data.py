@@ -22,7 +22,7 @@ from typing import List, Tuple, Any, Dict
 from dataclasses import dataclass, field
 from dask import delayed, compute
 
-from ..core.entity_manager import EntityManager
+#from ..core.entity_manager import EntityManager
 from ..lib.trajectory_data import TrajectoryData
 from ..lib.force_data import ForceDataSequence
 from ..lib.collision_data import CollisionData
@@ -37,7 +37,8 @@ from ..lib.debug_utils import debug_print, set_debug, set_debug_prefix
 
 @dataclass
 class ResumeData:
-    entity_manager: EntityManager
+#    entity_manager: EntityManager
+    entity_manager: Any
 
     def __post_init__(self):
         config = self.entity_manager.get('config')
