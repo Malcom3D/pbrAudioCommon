@@ -39,6 +39,7 @@ from ..lib.debug_utils import debug_print, set_debug, set_debug_prefix
 
 _BZ2_MAGIC = b"BZ2\x01"   # 4-byte tag: our own container format
 _BZ2_HEADER = _BZ2_MAGIC + b"\x00" * 4  # optional alignment padding
+_PRESERVE_BLOSC2_ENTITIES = frozenset({"score_tracks"})
 
 @nb.njit(cache=True, fastmath=True, nogil=True, parallel=False)
 def _pack_float32_arrays(arrays: List[np.ndarray], out: np.ndarray) -> int:
@@ -650,10 +651,14 @@ class KleptoEntityStore:
                 continue
 
             # Bulk write: build one dask graph per entity.
+            preserve = entity in _PRESERVE_BLOSC2_ENTITIES
             items = []
             for k, v in collection.items():
-                # Before putting, convert any blosc2 arrays to numpy arrays.
-                cleaned_v = self._blosc2_to_numpy(v)
+                if preserve:
+                    cleaned_v = v       # let __getstate__ handle NDArray materialization
+                else:
+                    # Before putting, convert any blosc2 arrays to numpy arrays.
+                    cleaned_v = self._blosc2_to_numpy(v)
                 items.append((int(k), cleaned_v))
             self.put_many(entity, items)
 
