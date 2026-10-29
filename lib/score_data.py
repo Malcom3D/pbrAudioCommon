@@ -26,6 +26,49 @@ import numpy as np
 from dataclasses import dataclass, field
 from typing import List, Tuple, Dict, Any, Optional, Union
 
+# 16 MiB threshold for switching from in-memory numpy to blosc2 NDArray storage.
+_BLOSC2_THRESHOLD_BYTES = 16 * 1024 * 1024  # 16 MiB
+
+
+def _to_blosc2(tag: str, arr: Union[np.ndarray, blosc2.NDArray, None]) -> Union[np.ndarray, blosc2.NDArray, None]:
+    """
+    Return `arr` as a persistent `blosc2.NDArray` if it contains more than
+    `_BLOSC2_THRESHOLD_BYTES` of payload, otherwise return it unchanged.
+
+    For reading back, we tag the NDArray in its metadata (`tag`) so the
+    loader can decide whether to keep it as NDArray (large) or convert it
+    to a numpy array (small), even when the threshold changes later.
+    """
+    if arr is None:
+        return None
+    if isinstance(arr, blosc2.NDArray):
+        return arr
+    if not isinstance(arr, np.ndarray):
+        return arr
+    if arr.nbytes <= _BLOSC2_THRESHOLD_BYTES:
+        return arr
+
+    # Create a specific cparams/dparams for score payloads.
+    cparams = blosc2.CParams(
+        codec=blosc2.Codec.LZ4, typesize=1, clevel=1, nthreads=8,
+    )
+    dparams = blosc2.DParams(nthreads=16)
+    nd = blosc2.asarray(arr, cparams=cparams, dparams=dparams)
+    nd.vlmeta["score_tag"] = tag
+    return nd
+
+def _from_blosc2(arr: Union[np.ndarray, blosc2.NDArray, None]) -> Union[np.ndarray, blosc2.NDArray, None]:
+    """
+    Keep large payloads as `blosc2.NDArray`, convert small ones to numpy.
+    """
+    if arr is None:
+        return None
+    if not isinstance(arr, blosc2.NDArray):
+        return arr
+    if arr.nbytes <= _BLOSC2_THRESHOLD_BYTES:
+        return arr[:]
+    return arr
+
 @dataclass
 class ScoreEvent:
     """Represents the score for a single collision"""
@@ -34,9 +77,37 @@ class ScoreEvent:
     stop_sample: int
     type: np.ndarray # shape(total_samples,1, dtype=np.int32)
     vertex_ids: Union[blosc2.ndarray.NDArray, np.ndarray]  # shape(total_samples,n_vertices)
-    contact_area: np.ndarray = None # shape(total_samples,1)
-    force: np.ndarray = None # shape(total_samples,1) Excitation force magnitude
-    coupling_data: np.ndarray = None # shape(total_samples,1) Array of [other_obj_idx, coupling_strength] pairs
+    contact_area: Union[blosc2.ndarray.NDArray, np.ndarray] = None # shape(total_samples,1)
+    force: Union[blosc2.ndarray.NDArray, np.ndarray] = None # shape(total_samples,1) Excitation force magnitude
+    coupling_data: Union[blosc2.ndarray.NDArray, np.ndarray] = None # shape(total_samples,1) Array of [other_obj_idx, coupling_strength] pairs
+
+    def __post_init__(self):
+        # Enforce the ">16MB -> blosc2 NDArray" policy on every construction,
+        # including those coming from `ScoreTrack.load()`.
+        self.type = _to_blosc2("type", self.type) if not isinstance(self.type, blosc2.NDArray) else self.type
+        self.vertex_ids = _to_blosc2("vertex_ids", self.vertex_ids)
+        self.contact_area = _to_blosc2("contact_area", self.contact_area)
+        self.force = _to_blosc2("force", self.force)
+        self.coupling_data = _to_blosc2("coupling_data", self.coupling_data)
+
+    def _get(self, name):
+        v = getattr(self, name)
+        if isinstance(v, blosc2.NDArray):
+            return v[:]
+        return v
+
+    def __getstate__(self):
+        state = self.__dict__.copy()
+        # blosc2 NDArrays don't pickle reliably; ship raw numpy to the pickler.
+        for k in ("type", "vertex_ids", "contact_area", "force", "coupling_data"):
+            v = state.get(k)
+            if isinstance(v, blosc2.NDArray):
+                state[k] = v[:]  # materialize
+        return state
+
+    def __setstate__(self, state):
+        self.__dict__.update(state)
+        self.__post_init__()  # re-apply the >16MB -> NDArray policy
 
     def get_event_at_sample(self, sample_idx: int):
         """Get all events at a specific sample index."""
@@ -47,39 +118,33 @@ class ScoreEvent:
         score_event = {
             'coll_obj': self.coll_obj,
             'start_sample': self.start_sample,
-            'stop_sample': self.stop_sample
+            'stop_sample': self.stop_sample,
         }
-    
+
         filenames = []
-        # Save score_event to file
+
         json_file = f"{obj_idx}_{self.coll_obj}_{idx}.json"
         with open(f"{output_path}/{json_file}", 'w') as f:
             json.dump(score_event, f, indent=2)
-
         filenames.append(json_file)
 
-        filename = f"{obj_idx}_{self.coll_obj}_{idx}_vertex_ids.b2"
-        blosc2.save(self.vertex_ids, f"{output_path}/{filename}", mode="w")
-        filenames.append(filename)
-
-        filename = f"{obj_idx}_{self.coll_obj}_{idx}_type.bl2"
-        blosc2.save_array(self.type, f"{output_path}/{filename}", mode="w")
-        filenames.append(filename)
-
-        if self.contact_area is not None:
-            filename = f"{obj_idx}_{self.coll_obj}_{idx}_contact_area.bl2"
-            blosc2.save_array(self.contact_area, f"{output_path}/{filename}", mode="w")
+        def _save_field(name: str, arr, suffix: str):
+            if arr is None:
+                return
+            filename = f"{obj_idx}_{self.coll_obj_obj}_{idx}_{name}.{suffix}"
+            if isinstance(arr, blosc2.NDArray):
+                # Keep the existing container (cparams/dparams preserved).
+                blosc2.save(arr, f"{output_path}/{filename}", mode="w")
+            else:
+                # Small numpy payload: still wrap it in a blosc2 container.
+                blosc2.save_array(arr, f"{output_path}/{filename}", mode="w")
             filenames.append(filename)
 
-        if self.force is not None:
-            filename = f"{obj_idx}_{self.coll_obj}_{idx}_force.bl2"
-            blosc2.save_array(self.force, f"{output_path}/{filename}", mode="w")
-            filenames.append(filename)
-
-        if self.coupling_data is not None:
-            filename = f"{obj_idx}_{self.coll_obj}_{idx}_coupling_data.bl2"
-            blosc2.save_array(self.coupling_data, f"{output_path}/{filename}", mode="w")
-            filenames.append(filename)
+        _save_field("vertex_ids",    self.vertex_ids,    "b2")
+        _save_field("type",          self.type,          "bl2")
+        _save_field("contact_area",  self.contact_area,  "bl2")
+        _save_field("force",         self.force,         "bl2")
+        _save_field("coupling_data", self.coupling_data, "bl2")
 
         filepath = f"{obj_idx}_{self.coll_obj}_{idx}.tar.gz"
         with tarfile.open(f"{output_path}/{filepath}", mode="w:gz") as tar:
@@ -143,69 +208,81 @@ class ScoreTrack:
 
     @classmethod
     def load(cls, filepath: str, final: bool = False) -> 'ScoreTrack':
-        """
-        Load a ScoreTrack from a tar gz file.
-
-        Args:
-            filepath: Path to the file to load
-
-        Returns:
-            Loaded ScoreTrack instance
-        """
         events = []
-        contact_area, force, coupling_data = (None for _ in range(3))
 
-        # make output path
         dirpath = os.path.dirname(filepath)
         output_path = f"{dirpath}/extract"
         os.makedirs(output_path, exist_ok=True)
-        
+
         to_be_removed = []
         with tarfile.open(filepath, mode="r:gz") as tar:
             filenames = tar.getnames()
+            # Local per-event scratch, reset for every event.
             for filename in filenames:
-               if filename.endswith('json'):
-                   tar.extract(filename, output_path)
-                   to_be_removed.append(filename)
-                   with open(f"{output_path}/{filename}", 'r') as f:
-                       score_track = json.load(f)
-                       if final and not score_track['is_final']:
-                           break
-               elif filename.endswith('tar.gz'):
-                   tar.extract(filename, output_path)
-                   to_be_removed.append(filename)
-                   with tarfile.open(f"{output_path}/{filename}", mode="r:gz") as score_event_tar:
-                       event_files = score_event_tar.getnames()
-                       for event_file in event_files:
-                           if event_file.endswith('.json'):
-                               score_event_tar.extract(event_file, output_path)
-                               to_be_removed.append(event_file)
-                               with open(f"{output_path}/{event_file}", 'r') as f:
-                                   event_track = json.load(f)
-                                   coll_obj = event_track['coll_obj']
-                                   start_sample = event_track['start_sample']
-                                   stop_sample = event_track['stop_sample']
-#                       for event_file in event_files:
-                           else:
-                               score_event_tar.extract(event_file, output_path)
-                               to_be_removed.append(event_file)
-                               if event_file.endswith('b2'):
-                                   cparams = blosc2.CParams(codec=blosc2.Codec.LZ4, typesize=1, clevel=1, nthreads=8)
-                                   dparams = blosc2.DParams(nthreads=16)
-                                   vertex_ids = blosc2.load(f"{output_path}/{event_file}", cparams=cparams, dparams=dparams)
-                               elif event_file.endswith('bl2'):
-                                   if 'type' in event_file:
-                                       ev_type = blosc2.load_array(f"{output_path}/{event_file}")
-                                   elif 'contact_area' in event_file:
-                                       contact_area = blosc2.load_array(f"{output_path}/{event_file}")
-                                   elif 'force' in event_file:
-                                       force = blosc2.load_array(f"{output_path}/{event_file}")
-                                   elif 'coupling_data' in event_file:
-                                       coupling_data = blosc2.load_array(f"{output_path}/{event_file}")
+                if filename.endswith('json'):
+                    tar.extract(filename, output_path)
+                    to_be_removed.append(filename)
+                    with open(f"{output_path}/{filename}", 'r') as f:
+                        score_track = json.load(f)
+                        if final and not score_track['is_final']:
+                            break
+                    continue
 
-                   events.append(ScoreEvent(coll_obj=coll_obj, start_sample=start_sample, stop_sample=stop_sample, type=ev_type, contact_area=contact_area, force=force, vertex_ids=vertex_ids, coupling_data=coupling_data))
+                if not filename.endswith('tar.gz'):
+                    continue
+
+                tar.extract(filename, output_path)
+                to_be_removed.append(filename)
+
+                with tarfile.open(f"{output_path}/{filename}", mode="r:gz") as score_event_tar:
+                    event_files = score_event_tar.getnames()
+
+                    # Per-event state.
+                    coll_obj = start_sample = stop_sample = None
+                    ev_type = contact_area = force = coupling_data = vertex_ids = None
+
+                    for event_file in event_files:
+                        score_event_tar.extract(event_file, output_path)
+                        to_be_removed.append(event_file)
+                        path = f"{output_path}/{event_file}"
+
+                        if event_file.endswith('.json'):
+                            with open(path, 'r') as f:
+                                et = json.load(f)
+                            coll_obj = et['coll_obj']
+                            start_sample = et['start_sample']
+                            stop_sample = et['stop_sample']
+                        elif event_file.endswith('b2'):
+                            # Open in read-only mode; keep as NDArray so the
+                            # size policy can decide whether to expand.
+                            vertex_ids = blosc2.open(path, mode='r')
+                        elif event_file.endswith('bl2'):
+                            if 'type' in event_file:
+                                ev_type = blosc2.open(path, mode='r')
+                            elif 'contact_area' in event_file:
+                                contact_area = blosc2.open(path, mode='r')
+                            elif 'force' in event_file:
+                                force = blosc2.open(path, mode='r')
+                            elif 'coupling_data' in event_file:
+                                coupling_data = blosc2.open(path, mode='r')
+
+                    # Hand raw values to ScoreEvent: __post_init__ applies the
+                    # >16MB -> NDArray rule, converting small payloads to numpy.
+                    events.append(ScoreEvent(
+                        coll_obj=coll_obj,
+                        start_sample=start_sample,
+                        stop_sample=stop_sample,
+                        type=ev_type,
+                        contact_area=contact_area,
+                        force=force,
+                        vertex_ids=vertex_ids,
+                        coupling_data=coupling_data,
+                    ))
 
         for file in to_be_removed:
-            os.remove(f"{output_path}/{file}")
+            p = f"{output_path}/{file}"
+            if os.path.exists(p):
+                os.remove(p)
+
         score_track['events'] = events
         return cls(**score_track)
