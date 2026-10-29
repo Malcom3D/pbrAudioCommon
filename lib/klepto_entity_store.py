@@ -415,7 +415,7 @@ class KleptoEntityStore:
             except Exception:
                 approx_bytes = self.config.bz2_min_bytes  # compress anyway
             if approx_bytes >= self.config.bz2_min_bytes:
-                return "bz2", obj, _delayed_write_bz2
+                return "bz2", obj, self._delayed_write_bz2
 
         use_packed = (
             self.config.use_numba_packing
@@ -426,7 +426,7 @@ class KleptoEntityStore:
             if total_bytes >= self.config.numba_min_bytes:
                 return "packed", list(obj), _delayed_write_packed
 
-        return "pickle", obj, _delayed_write_pickle
+        return "pickle", obj, self._delayed_write_pickle
 
     def put(self, entity: str, idx: int, obj: Any) -> None:
         fmt, payload, builder = self._pick_encoding(entity, obj)
