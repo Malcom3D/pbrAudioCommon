@@ -24,7 +24,6 @@ from typing import List, Tuple, Any
 
 from ..utils.config import Config
 #from ..lib.functions import _soxel_grid_shape
-from ..lib.resume_data import ResumeData
 
 class EntityManager:
     _instance = None
@@ -87,6 +86,7 @@ class EntityManager:
             config = Config(config)
             self.register('config', config)
 
+            from ..lib.resume_data import ResumeData
             resume_data = ResumeData(self)
             resume_data.load_data()
 

@@ -25,7 +25,6 @@ import numba as nb
 from scipy.spatial.transform import Rotation, Slerp
 import warnings
 
-from ..core.entity_manager import EntityManager
 from ..lib.functions import _load_particle
 from ..lib.functions import debug_print, set_debug, set_debug_prefix
 
