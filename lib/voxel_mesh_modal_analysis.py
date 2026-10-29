@@ -47,12 +47,16 @@ class VoxelMeshModalAnalysis:
 
         self.voxel_grid = np.array(voxel_grid, dtype=bool)
         self.nx, self.ny, self.nz = self.voxel_grid.shape
-        
+
         # Handle voxel size (uniform or anisotropic)
-        if isinstance(voxel_size, (int, float)):
+        if isinstance(voxel_size, (int, float, np.integer, np.floating)):
             self.dx = self.dy = self.dz = float(voxel_size)
+        elif isinstance(voxel_size, (tuple, list, np.ndarray)):
+            if len(voxel_size) != 3:
+                raise ValueError(f"voxel_size as an iterable must have exactly 3 elements, got {len(voxel_size)}")
+            self.dx, self.dy, self.dz = (float(v) for v in voxel_size)
         else:
-            self.dx, self.dy, self.dz = voxel_size
+            raise TypeError(f"voxel_size must be a number or a length-3 iterable, got {type(voxel_size).__name__}")
 
         # Material properties
         self.E = material_properties['young_modulus']
