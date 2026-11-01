@@ -43,13 +43,13 @@ class SystemConfig:
     samples_per_object: int = 1000
     hi_res_face2face: bool = False
     samples_per_face: int = 1000
-    enable_denoiser: bool = False
+    enable_audio_force_postprocess: bool = False
     enable_trajectory_postprocess: bool = False
     # rigidBody only
     enable_noise_enhancement: bool = True
     modal_modes: int = 20
     voxel_size: float = 0.01
-    enable_postprocess: bool = False
+    enable_synth_postprocess: bool = False
     enable_proxy_synth: bool = False
     # pbrAudioRay only
     output_format: str = 'AMBISONIC'
@@ -126,7 +126,7 @@ class TrajectoryPostProcessConfig:
     max_angular_velocity: float = 100.0  # Maximum angular velocity (rad/s)
 
 @dataclass
-class DenoiserConfig:
+class AudioForcePostProcess:
     # DC Offset Removal parameters
     enable_dc_blocker: bool = False
     dc_blocker_alpha: float = 0.999  # DC blocker coefficient (higher = more aggressive)
@@ -158,7 +158,7 @@ class DenoiserConfig:
     gaussian_force_threshold: float = 0.1  # Force threshold for adaptive smoothing
 
 @dataclass
-class PostProcessConfig:
+class SynthPostProcessConfig:
     """Configuration for post-processing parameters."""
     # Denoising parameters
     dynamic_denoise_enabled: bool = True
@@ -345,8 +345,8 @@ class Config:
 
         self.system = SystemConfig(**self.data.get('system', {}))
         self.trajectory_postprocess = TrajectoryPostProcessConfig(**self.data.get('trajectory_postprocess', {}))
-        self.denoiser = DenoiserConfig(**self.data.get('denoiser', {}))
-        self.postprocess = PostProcessConfig(**self.data.get('postprocess', {}))
+        self.denoiser = AudioForcePostProcess(**self.data.get('denoiser', {}))
+        self.postprocess = SynthPostProcessConfig(**self.data.get('postprocess', {}))
         self.wave_propagation = WavePropagationConfig(**self.data.get('wave_propagation', {}))
         self.fdtd = FDTDConfig(**self.data.get('fdtd', {}))
         self.interface = InterfaceConfig(**self.data.get('interface', {}))
