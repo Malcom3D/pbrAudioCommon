@@ -43,7 +43,7 @@ class SystemConfig:
     samples_per_object: int = 1000
     hi_res_face2face: bool = False
     samples_per_face: int = 1000
-    enable_audio_force_postprocess: bool = False
+    enable_audio_forces_postprocess: bool = False
     enable_trajectory_postprocess: bool = False
     # rigidBody only
     enable_noise_enhancement: bool = True
@@ -345,8 +345,8 @@ class Config:
 
         self.system = SystemConfig(**self.data.get('system', {}))
         self.trajectory_postprocess = TrajectoryPostProcessConfig(**self.data.get('trajectory_postprocess', {}))
-        self.denoiser = AudioForcePostProcess(**self.data.get('denoiser', {}))
-        self.postprocess = SynthPostProcessConfig(**self.data.get('postprocess', {}))
+        self.audio_forces_postprocess = AudioForcePostProcess(**self.data.get('audio_forces_postprocess', {}))
+        self.synth_postprocess = SynthPostProcessConfig(**self.data.get('synth_postprocess', {}))
         self.wave_propagation = WavePropagationConfig(**self.data.get('wave_propagation', {}))
         self.fdtd = FDTDConfig(**self.data.get('fdtd', {}))
         self.interface = InterfaceConfig(**self.data.get('interface', {}))
