@@ -32,7 +32,7 @@ from dask import delayed, compute
 import blosc2
 
 from dask import config as dask_config
-dask_config.set({'num_workers': 2, 'optimization.fuse.active': True, 'optimization.fuse.max_depth': 10,})
+dask_config.set({'num_workers': 1024, 'optimization.fuse.active': True, 'optimization.fuse.max_depth': 10,})
 
 from ..utils.config import Config
 from ..lib.debug_utils import debug_print, set_debug, set_debug_prefix
