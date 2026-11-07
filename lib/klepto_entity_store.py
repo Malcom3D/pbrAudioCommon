@@ -21,15 +21,15 @@ import gc
 import bz2
 import pickle
 import shutil
-from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Tuple, Iterable, Union
-
+import klepto
+import blosc2
+import threading
 import numpy as np
 import numba as nb
-import klepto
+from collections import OrderedDict
 from dask import delayed, compute
-
-import blosc2
+from dataclasses import dataclass, field
+from typing import Any, Dict, List, Optional, Tuple, Iterable, Union
 
 from dask import config as dask_config
 dask_config.set({'num_workers': 1024, 'optimization.fuse.active': True, 'optimization.fuse.max_depth': 10,})
@@ -215,6 +215,7 @@ class KleptoEntityStore:
         # One klepto archive per entity. Lazily created on first access.
         self._archives: Dict[str, klepto.archives.file_archive] = {}
         self._archive_lock: Dict[str, bool] = {}
+        self._lock = threading.RLock()
 
         # Meta index: entity -> {idx: {'format': 'pickle'|'packed', 'size': int}}
         self._meta: Dict[str, Dict[int, Dict[str, Any]]] = {}
@@ -257,7 +258,7 @@ class KleptoEntityStore:
         # klepto.file_archive writes one pickle per key. `cached=False` means
         # no in-memory mirror: every `__getitem__` reads from disk. This is
         # what we want for a large scene with many small objects.
-        archive_cls = klepto.archives.dir_archive
+        archive_cls = klepto.archives.file_archive
         archive = archive_cls(
             path,
             serialized=True,   # pickle values on disk
@@ -454,68 +455,72 @@ class KleptoEntityStore:
             self._meta.setdefault(ent, {})[i] = {"format": fmt, "size": int(size)}
         self._save_meta()
 
-#    def put(self, entity: str, idx: int, obj: Any) -> None:
-#        """
-#        Persist a single (entity, idx) -> obj.
-#
-#        If obj is a list/tuple of 1D float arrays and is large enough, we
-#        take the numba-packed fast path. Otherwise we fall back to klepto's
-#        pickle path.
-#        """
-#        use_packed = (
-#            self.config.use_numba_packing
-#            and self._is_float_array_collection(obj)
-#        )
-#
-#        if use_packed:
-#            # Estimate total bytes to decide if packing is worth it.
-#            total_bytes = sum(a.nbytes for a in obj)
-#            use_packed = total_bytes >= self.config.numba_min_bytes
-#
-#        if use_packed:
-#            task = delayed(_task_write_packed)(self, entity, idx, list(obj))
-#            fmt = "packed"
-#        else:
-#            task = delayed(_task_write_pickle)(self, entity, idx, obj)
-#            fmt = "pickle"
-#
-#        # Synchronous scheduler: this runs in the calling thread, no
-#        # threads/processes spawned.
-#        (ent, i, size), = compute(task)
-#
-#        self._meta.setdefault(ent, {})[i] = {"format": fmt, "size": int(size)}
-#        self._save_meta()
+    # ----------------------------------------------------------------
+    # Synchronous put (no dask) — used by EntityManager hot writes
+    # ----------------------------------------------------------------
+    def put_sync(self, entity: str, idx: int, obj: Any) -> None:
+        """
+        Synchronous write. Uses the same encoding decision as put() but
+        executes immediately. Cheap for small objects; for large packed
+        payloads you may still prefer the async put().
+        """
+        fmt, payload, _ = self._pick_encoding(entity, obj)
 
-#    def put_many(self, entity: str, items: Iterable[Tuple[int, Any]]) -> None:
-#        """
-#        Persist many objects of the same entity. Builds one dask graph and
-#        computes it synchronously. Good for bulk dumps.
-#        """
-#        tasks = []
-#        formats: List[str] = []
-#        idxs: List[int] = []
-#
-#        for idx, obj in items:
-#            use_packed = (
-#                self.config.use_numba_packing
-#                and self._is_float_array_collection(obj)
-#                and sum(a.nbytes for a in obj) >= self.config.numba_min_bytes
-#            )
-#            if use_packed:
-#                tasks.append(delayed(_task_write_packed)(self, entity, idx, list(obj)))
-#                formats.append("packed")
-#            else:
-#                tasks.append(delayed(_task_write_pickle)(self, entity, idx, obj))
-#                formats.append("pickle")
-#            idxs.append(idx)
-#
-#        if not tasks:
-#            return
-#
-#        results = compute(*tasks)
-#        for (ent, i, size), fmt in zip(results, formats):
-#            self._meta.setdefault(ent, {})[i] = {"format": fmt, "size": int(size)}
-#        self._save_meta()
+        with self._lock:
+            archive = self._get_archive(entity)
+            if fmt == "packed":
+                packed_dir = os.path.join(self._archive_path(entity), "_packed")
+                os.makedirs(packed_dir, exist_ok=True)
+                buf, lengths, dtype_str = self._pack_float_arrays(payload)
+                h = int(self._hash_bytes(buf.view(np.uint8)))
+                np.savez(os.path.join(packed_dir, f"{idx}.npz"),
+                         buf=buf, lengths=lengths)
+                with open(os.path.join(packed_dir, f"{idx}.meta.pkl"), "wb") as f:
+                    pickle.dump(
+                        {
+                            "dtype": dtype_str,
+                            "n_arrays": len(payload),
+                            "total_elems": int(buf.shape[0]),
+                            "hash": h,
+                        },
+                        f,
+                        protocol=pickle.HIGHEST_PROTOCOL,
+                    )
+                size = os.path.getsize(os.path.join(packed_dir, f"{idx}.npz"))
+
+            elif fmt == "bz2":
+                archive[str(idx)] = _pack_bz2(payload,
+                                              compresslevel=self.config.bz2_compresslevel)
+                if self.config.cached:
+                    archive.dump()
+                size = 0  # size bookkeeping optional
+
+            else:  # pickle
+                # score_tracks: let __getstate__ materialise blosc2
+                archive[str(idx)] = payload
+                if self.config.cached:
+                    archive.dump()
+                # verify path exists (klepto file_archive convention)
+                fpath = os.path.join(self._archive_path(entity), f"K_{idx}/output.pkl")
+                size = os.path.getsize(fpath) if os.path.exists(fpath) else 0
+
+            self._meta.setdefault(entity, {})[idx] = {"format": fmt, "size": int(size)}
+            self._save_meta()
+
+    def put_sync_many(self, entity: str, items: Iterable[Tuple[int, Any]]) -> None:
+        for idx, obj in items:
+            self.put_sync(entity, idx, obj)
+
+    def exists(self, entity: str, idx: int) -> bool:
+        with self._lock:
+            return idx in self._meta.get(entity, {})
+
+    def has_entity(self, entity: str) -> bool:
+        with self._lock:
+            return bool(self._meta.get(entity, {}))
+
+    def iter_keys(self, entity: str):
+        return list(self._meta.get(entity, {}).keys())
 
     @staticmethod
     def _safe_pickle_load(path: str) -> Any:

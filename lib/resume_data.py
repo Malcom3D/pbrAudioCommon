@@ -16,125 +16,32 @@
 # along with pbrAudio.  If not, see <https://www.gnu.org/licenses/>.
 # SPDX-License-Identifier: GPL-3.0-or-later
 
-import os
-import numpy as np
-from typing import List, Tuple, Any, Dict
-from dataclasses import dataclass, field
-from dask import delayed, compute
-
-#from ..core.entity_manager import EntityManager
-from ..lib.trajectory_data import TrajectoryData
-from ..lib.force_data import ForceDataSequence
-from ..lib.collision_data import CollisionData
-from ..lib.modal_vertices import ModalVertices
-from ..lib.score_data import ScoreTrack
-from ..lib.particles_trajectory_data import ParticlesTrajectoryData
-
-from ..lib.klepto_entity_store import KleptoEntityStore
-from ..utils.config import KleptoEntityStoreConfig
-
-from ..lib.debug_utils import debug_print, set_debug, set_debug_prefix
+_EAGER = frozenset({"sources", "objects", "outputs"})
 
 @dataclass
 class ResumeData:
-#    entity_manager: EntityManager
     entity_manager: Any
 
     def __post_init__(self):
-        config = self.entity_manager.get('config')
+        config = self.entity_manager.get("config")
         self.status_dir = f"{config.system.cache_path}/status/{__class__.__name__}"
-
         set_debug(config.system.debug)
         set_debug_prefix(self.__class__.__name__)
 
-#        self.physical_core = config.system.physical_core
-#        self.collisions_dir = f"{config.system.cache_path}/collisions"
-#        self.trajectories_dir = f"{config.system.cache_path}/trajectories"
-#        self.forces_dir = f"{config.system.cache_path}/forces_data"
-#        self.modalvertices_dir = f"{config.system.cache_path}/modalvertices"
-#        self.scoretracks_dir = f"{config.system.cache_path}/scoretracks"
-#        self.fracture_dir = f"{config.system.cache_path}/fracture"
-
-    def load_data(self):
-        config = self.entity_manager.get('config')
-        store = KleptoEntityStore(config)
-
-        # The list of entities to load is defined in the the store itself.
-        entities_to_load = store.DEFAULT_ENTITIES
-        
-        for entity_name in entities_to_load:
-            # Get all the indices (keys) for the given entity from the store's metadata.
-            keys = store.keys(entity_name)
+    def load_data(self, eager_only: bool = False):
+        store = self.entity_manager._store
+        for name in store.DEFAULT_ENTITIES:
+            if eager_only and name not in _EAGER:
+                continue
+            keys = store.keys(name)
             if not keys:
                 continue
 
-            # Load all objects for that entity in one go.
-            loaded_objects = store.get_many(entity_name, keys)
+            # eager path already done by EntityManager._hydrate_eager
+            if name in _EAGER:
+                continue
 
-            # Iterate over the loaded objects and register each one with the EntityManager.
-            for idx, obj in loaded_objects.items():
-                if obj is not None:
-                    try:
-                        _ = self.entity_manager.register(entity_name, obj)
-                        debug_print(f"{entity_name}/{idx} registered from resume data")
-                    except Exception as e:
-                        debug_print(f"Failed to register {entity_name}/{idx} from resume data: {e}")
-
-        store.close()
-
-#    def load_data(self):
-#        trajectories = self.entity_manager.get('trajectories')
-#        if len(trajectories) == 0:
-#            if os.path.exists(f"{self.trajectories_dir}") and not len(os.listdir(f"{self.trajectories_dir}")) == 0:
-#                for filename in os.listdir(f"{self.trajectories_dir}"):
-#                    trajectory = None
-#                    if filename.endswith('_ParticleSystem.pkl'):
-#                        trajectory = ParticlesTrajectoryData.load(f"{self.trajectories_dir}/{filename}", self.entity_manager)
-#                    elif filename.endswith('.pkl') and os.path.isfile(f"{self.trajectories_dir}/corrected/{filename}"):
-#                        trajectory = TrajectoryData.load(f"{self.trajectories_dir}/corrected/{filename}")
-#                    elif filename.endswith('.pkl') and not os.path.isfile(f"{self.trajectories_dir}/corrected/{filename}"):
-#                        trajectory = TrajectoryData.load(f"{self.trajectories_dir}/{filename}")
-#                    if trajectory is not None:
-#                        _ = self.entity_manager.register('trajectories', trajectory)
-#
-#        collisions = self.entity_manager.get('collisions')
-#        if len(collisions) == 0:
-#            if os.path.exists(f"{self.collisions_dir}") and not len(os.listdir(f"{self.collisions_dir}")) == 0:
-#                for filename in os.listdir(f"{self.collisions_dir}"):
-#                    if filename.endswith('.pkl'):
-#                        collisions = CollisionData.load(f"{self.collisions_dir}/{filename}")
-#                        _ = self.entity_manager.register('collisions', collisions)
-#
-#        forces = self.entity_manager.get('forces')
-#        if len(forces) == 0:
-#            if os.path.exists(f"{self.forces_dir}") and not len(os.listdir(f"{self.forces_dir}")) == 0:
-#                for filename in os.listdir(f"{self.forces_dir}"):
-#                    if filename.endswith('.pkl'):
-#                        forces = ForceDataSequence.load(f"{self.forces_dir}/{filename}")
-#                        _ = self.entity_manager.register('forces', forces)
-#
-#        modal_vertices = self.entity_manager.get('modal_vertices')
-#        if len(modal_vertices) == 0:
-#            if os.path.exists(self.modalvertices_dir) and not len(os.listdir(f"{self.modalvertices_dir}")) == 0:
-#                filenames = os.listdir(self.modalvertices_dir)
-#                for filename in filenames:
-#                    if os.path.isfile(f"{self.modalvertices_dir}/{filename}"):
-#                        modal_vertices = ModalVertices.load(f"{self.modalvertices_dir}/{filename}")
-#                        _ = self.entity_manager.register('modal_vertices', modal_vertices)
-#
-#        score_tracks = self.entity_manager.get('score_tracks')
-#        if len(score_tracks) == 0:
-#            if os.path.exists(self.scoretracks_dir) and not len(os.listdir(f"{self.scoretracks_dir}")) == 0:
-#                filenames = os.listdir(self.scoretracks_dir)
-#                for filename in filenames:
-#                    if os.path.isfile(f"{self.scoretracks_dir}/{filename}"):
-#                        score_tracks = ScoreTrack.load(f"{self.scoretracks_dir}/{filename}")
-#                        _ = self.entity_manager.register('score_tracks', score_tracks)
-#
-#        fracture_events = self.entity_manager.get('fracture_events')
-#        if len(fracture_events) == 0:
-#            if os.path.exists(self.fracture_dir):
-#                for filename in os.listdir(self.fracture_dir):
-#                    if filename.endswith('.pkl'):
-#                        fracture_event = FractureEvent.load(f"{self.fracture_dir}/{filename}")
-#                        _ = self.entity_manager.register('fracture_events', fracture_event)
+            # Lazy collections: DON'T hydrate now. Just make sure they're
+            # discoverable later via EntityManager.get(name) — which pulls
+            # from the store on demand.
+            debug_print(f"[ResumeData] {name}: {len(keys)} items available lazily")
