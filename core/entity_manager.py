@@ -143,7 +143,7 @@ class EntityManager:
                 if obj is None:
                     continue
                 with self._locks[name]:
-                    get getattr(self, f"_{name}")[idx] = obj
+                    getattr(self, f"_{name}")[idx] = obj
             debug_print(f"[EntityManager] hydrated {name} {self.count_entity(name)[name]} items)")
 
         for name in _EAGER_SINGLETONS:
