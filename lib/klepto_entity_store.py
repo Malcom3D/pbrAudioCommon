@@ -258,7 +258,7 @@ class KleptoEntityStore:
         # klepto.file_archive writes one pickle per key. `cached=False` means
         # no in-memory mirror: every `__getitem__` reads from disk. This is
         # what we want for a large scene with many small objects.
-        archive_cls = klepto.archives.file_archive
+        archive_cls = klepto.archives.dir_archive
         archive = archive_cls(
             path,
             serialized=True,   # pickle values on disk
