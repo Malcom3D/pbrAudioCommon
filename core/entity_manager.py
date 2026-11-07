@@ -80,7 +80,7 @@ class EntityManager:
             "config": "Config",
             "frames": "FrameCounter",
             "sample_counter": "SampleCounter",
-            "connected_buffer": "ConnectedConnectedBuffer",
+            "connected_buffer": "ConnectedBuffer",
             "frequency_bands": "FrequencyBands",
             "soxel_grid": "SoxelGrid",
             "geometry_data": "GeometryData",
