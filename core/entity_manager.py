@@ -105,12 +105,12 @@ class EntityManager:
 
         # Build config + store
         self._config = Config(config)
+        self._store = KleptoEntityStore(self._config)
+
         self.register("config", self._config)
 
         set_debug(self._config.system.debug)
         set_debug_prefix(self.__class__.__name__)
-
-        self._store = KleptoEntityStore(self._config)
 
         # LRU hot cache for collections *not* in _EAGER_COLLECTIONS.
         self._hot: "OrderedDict[Tuple[str, int], Any]" = OrderedDict()
