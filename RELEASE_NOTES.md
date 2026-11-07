@@ -1,8 +1,10 @@
 # pbrAudioCommon
-Welcome to version v0.3.0 of pbrAudioCommon! This release brings major feature additions across our audio pipeline, including a brand new TUI for the DAW, new 3D viewport widgets and panel integration in Blender, advanced physical-to-acoustic processors, and major performance and storage enhancements.
+This release introduces major updates to the pbrAudio ecosystem, focusing on performance, workflow integration, and stability.
 
-* **New DAW Interface:** Experience the brand new `pbrAudioDAW` complete with a handy Terminal User Interface (TUI).
-* **Blender Enhancements:** Enjoy a smoother workflow with new 3D viewport widgets and Viewport Panel integration in `pbrAudioBlender`.
-* **Advanced Sound Processors:** New processors for modal displacement, audio forces, and mono modal displacement to acoustic pressure bring deeper physical modeling capabilities.
-* **Storage & Performance:** `KleptoEntityStore` now supports bz2 compression, and `blosc2Backend` has been upgraded to parallel append and mmapped modes to handle large datasets seamlessly and prevent out-of-memory errors.
-* **Bug Fixes:** Numerous typos, syntax errors, and data alignment issues between physics solvers and audio storage have been resolved for a much more stable experience.
+**Key Updates:**
+
+*   **New Tools & Integration:** We’ve added a new TUI-based DAW (`pbrAudioDAW`) and enhanced the Blender experience with new 3D viewport widgets and panels.
+*   **Performance Improvements:** We have overhauled our storage backend to use parallel processing and memory-mapped files, which significantly improves data handling speed and stability. We also introduced bz2 compression to keep your project files efficient.
+*   **Audio Processing:** New processors are now available for modal displacement and acoustic pressure, with improved support for complex audio signal chains.
+*   **Bug Fixes:** This version includes critical fixes for memory management (addressing OOM issues in ModalComposer), metadata alignment, and various syntax/naming errors that could cause crashes.
+*   **Workflow:** Data storage and metadata management are now more flexible, allowing for better customization of your audio processing chains.
