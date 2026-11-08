@@ -16,6 +16,7 @@
 # along with pbrAudio.  If not, see <https://www.gnu.org/licenses/>.
 # SPDX-License-Identifier: GPL-3.0-or-later
 
+import io
 import os
 import gc
 import bz2
@@ -35,11 +36,22 @@ from dask import config as dask_config
 dask_config.set({'num_workers': 1024, 'optimization.fuse.active': True, 'optimization.fuse.max_depth': 10,})
 
 from ..utils.config import Config
+from ..lib import blosc2_pickle 
 from ..lib.debug_utils import debug_print, set_debug, set_debug_prefix
 
 _BZ2_MAGIC = b"BZ2\x01"   # 4-byte tag: our own container format
 _BZ2_HEADER = _BZ2_MAGIC + b"\x00" * 4  # optional alignment padding
 _PRESERVE_BLOSC2_ENTITIES = frozenset({"score_tracks"})
+
+def _unpack_bz2_bytes(blob: Union[bytes, bytearray]) -> bytes:
+    """
+    Inverse of _pack_bz2(), but returns the *uncompressed pickle bytes*
+    instead of an already-unpickled object, so the caller can feed them
+    to Blosc2AwareUnpickler.
+    """
+    if not _is_bz2_blob(blob):
+        raise ValueError("Not a bz2 packed blob")
+    return bz2.decompress(bytes(blob[4:]))
 
 @nb.njit(cache=True, fastmath=True, nogil=True, parallel=False)
 def _pack_float32_arrays(arrays: List[np.ndarray], out: np.ndarray) -> int:
@@ -101,7 +113,7 @@ def _hash_bytes(buf: np.ndarray) -> np.uint64:
 def _atomic_pickle_dump(obj: Any, path: str) -> None:
     tmp = path + ".tmp"
     with open(tmp, "wb") as f:
-        pickle.dump(obj, f, protocol=pickle.HIGHEST_PROTOCOL)
+        blosc2_pickle.dump(obj, f, protocol=pickle.HIGHEST_PROTOCOL)
     os.replace(tmp, path)
 
 def _is_bz2_blob(obj: Any) -> bool:
@@ -117,7 +129,7 @@ def _pack_bz2(obj: Any, compresslevel: int = 9) -> bytes:
     bytes blob prefixed with _BZ2_MAGIC so we can tell it apart from
     raw pickles that klepto might otherwise write.
     """
-    payload = pickle.dumps(obj, protocol=pickle.HIGHEST_PROTOCOL)
+    payload = blosc2_pickle.dumps(obj, protocol=pickle.HIGHEST_PROTOCOL)
     compressed = bz2.compress(payload, compresslevel=compresslevel)
     return _BZ2_MAGIC + compressed
 
@@ -126,7 +138,7 @@ def _unpack_bz2(blob: Union[bytes, bytearray]) -> Any:
     """Inverse of _pack_bz2()."""
     if not _is_bz2_blob(blob):
         raise ValueError("Not a bz2 packed blob")
-    return pickle.loads(bz2.decompress(bytes(blob[4:])))
+    return blosc2_pickle.loads(bz2.decompress(bytes(blob[4:])))
 
 def _task_write_pickle(store, entity, idx, obj):
     archive = store._get_archive(entity)
@@ -142,12 +154,12 @@ def _task_write_pickle(store, entity, idx, obj):
     # Verify the pickle actually loads; if not, rewrite atomically.
     try:
         with open(fpath, "rb") as f:
-            pickle.load(f)
+            blosc2_pickle.load(f)
     except Exception:
         debug_print(f"Post-write verify failed for {entity}/{idx}, rewriting atomically")
         tmp = fpath + ".tmp"
         with open(tmp, "wb") as f:
-            pickle.dump(obj, f, protocol=pickle.HIGHEST_PROTOCOL)
+            blosc2_pickle.dump(obj, f, protocol=pickle.HIGHEST_PROTOCOL)
         os.replace(tmp, fpath)
 
     size = os.path.getsize(fpath) if os.path.exists(fpath) else 0
@@ -165,7 +177,7 @@ def _task_write_packed(store, entity, idx, arrays):
 
     np.savez(npz_path, buf=buf, lengths=lengths)
     with open(meta_path, "wb") as f:
-        pickle.dump(
+        blosc2_pickle.dump(
             {
                 "dtype": dtype_str,
                 "n_arrays": len(arrays),
@@ -226,7 +238,7 @@ class KleptoEntityStore:
         if os.path.exists(self._meta_path):
             try:
                 with open(self._meta_path, "rb") as f:
-                    raw = pickle.load(f)
+                    raw = blosc2_pickle.load(f)
                 # JSON keys are strings; normalise ints.
                 self._meta = {
                     ent: {int(k): v for k, v in per.items()}
@@ -242,7 +254,7 @@ class KleptoEntityStore:
         # Atomic-ish write: write to tmp then rename.
         tmp = self._meta_path + ".tmp"
         with open(tmp, "wb") as f:
-            pickle.dump(self._meta, f, protocol=pickle.HIGHEST_PROTOCOL)
+            blosc2_pickle.dump(self._meta, f, protocol=pickle.HIGHEST_PROTOCOL)
         os.replace(tmp, self._meta_path)
 
     def _archive_path(self, entity: str) -> str:
@@ -381,7 +393,7 @@ class KleptoEntityStore:
 
         np.savez(npz_path, buf=buf, lengths=lengths)
         with open(meta_path, "wb") as f:
-            pickle.dump(
+            blosc2_pickle.dump(
                 {
                     "dtype": dtype_str,
                     "n_arrays": len(arrays),
@@ -413,7 +425,7 @@ class KleptoEntityStore:
         if use_bz2:
             # Pre-check size (cheap) so tiny objects don't pay bz2 cost.
             try:
-                approx_bytes = len(pickle.dumps(obj, protocol=pickle.HIGHEST_PROTOCOL))
+                approx_bytes = len(blosc2_pickle.dumps(obj, protocol=pickle.HIGHEST_PROTOCOL))
             except Exception:
                 approx_bytes = self.config.bz2_min_bytes  # compress anyway
             if approx_bytes >= self.config.bz2_min_bytes:
@@ -455,19 +467,27 @@ class KleptoEntityStore:
             self._meta.setdefault(ent, {})[i] = {"format": fmt, "size": int(size)}
         self._save_meta()
 
-    # ----------------------------------------------------------------
-    # Synchronous put (no dask) — used by EntityManager hot writes
-    # ----------------------------------------------------------------
+    # ------------------------------------------------------------------
+    # New: pickle helpers that preserve blosc2 NDArrays as cframes
+    # ------------------------------------------------------------------
+    @staticmethod
+    def _pickle_dumps(obj: Any) -> bytes:
+        """Serialize via Blosc2AwarePickler — NDArrays survive as cframes."""
+        return blosc2_pickle.dumps(obj, protocol=pickle.HIGHEST_PROTOCOL)
+
+    @staticmethod
+    def _pickle_loads(blob: bytes) -> Any:
+        return blosc2_pickle.loads(blob)
+
+    # ------------------------------------------------------------------
+    # put_sync — write path
+    # ------------------------------------------------------------------
     def put_sync(self, entity: str, idx: int, obj: Any) -> None:
-        """
-        Synchronous write. Uses the same encoding decision as put() but
-        executes immediately. Cheap for small objects; for large packed
-        payloads you may still prefer the async put().
-        """
         fmt, payload, _ = self._pick_encoding(entity, obj)
 
         with self._lock:
             archive = self._get_archive(entity)
+
             if fmt == "packed":
                 packed_dir = os.path.join(self._archive_path(entity), "_packed")
                 os.makedirs(packed_dir, exist_ok=True)
@@ -476,7 +496,7 @@ class KleptoEntityStore:
                 np.savez(os.path.join(packed_dir, f"{idx}.npz"),
                          buf=buf, lengths=lengths)
                 with open(os.path.join(packed_dir, f"{idx}.meta.pkl"), "wb") as f:
-                    pickle.dump(
+                    blosc2_pickle.dump(
                         {
                             "dtype": dtype_str,
                             "n_arrays": len(payload),
@@ -489,20 +509,34 @@ class KleptoEntityStore:
                 size = os.path.getsize(os.path.join(packed_dir, f"{idx}.npz"))
 
             elif fmt == "bz2":
-                archive[str(idx)] = _pack_bz2(payload,
+                archive[str(idx)] = _pack_bz2(self._pickle_dumps(payload),
                                               compresslevel=self.config.bz2_compresslevel)
                 if self.config.cached:
                     archive.dump()
-                size = 0  # size bookkeeping optional
+                size = 0
 
-            else:  # pickle
-                # score_tracks: let __getstate__ materialise blosc2
-                archive[str(idx)] = payload
-                if self.config.cached:
-                    archive.dump()
-                # verify path exists (klepto file_archive convention)
-                fpath = os.path.join(self._archive_path(entity), f"K_{idx}/output.pkl")
-                size = os.path.getsize(fpath) if os.path.exists(fpath) else 0
+            else:  # pickle — this is where ScoreEvent lands.
+                # We DO NOT call _blosc2_to_numpy() here. Blosc2AwarePickler
+                # will turn NDArrays into B2NARR byte blobs at serialization
+                # time, keeping their compression intact.
+
+                # Score_track path: pick directly with the blosc2-aware
+                # pickler, bypassing klepto's own dumper (which uses stdlib
+                # blosc2_pickle.dump and would choke on NDArrays).
+                if entity in _PRESERVE_BLOSC2_ENTITIES:
+                    fpath = os.path.join(self._archive_path(entity), f"K_{idx}/output.pkl")
+                    os.makedirs(os.path.dirname(fpath), exist_ok=True)
+                    tmp = fpath + ".tmp"
+                    with open(tmp, "wb") as f:
+                        f.write(self._pickle_dumps(payload))
+                    os.replace(tmp, fpath)
+                    size = os.path.getsize(fpath)
+                else:
+                    archive[str(idx)] = payload
+                    if self.config.cached:
+                        archive.dump()
+                    fpath = os.path.join(self._archive_path(entity), f"K_{idx}/output.pkl")
+                    size = os.path.getsize(fpath) if os.path.exists(fpath) else 0
 
             self._meta.setdefault(entity, {})[idx] = {"format": fmt, "size": int(size)}
             self._save_meta()
@@ -529,23 +563,25 @@ class KleptoEntityStore:
             return None
         try:
             with open(path, "rb") as f:
-                return pickle.load(f)
+                return blosc2_pickle.load(f)
         except (pickle.UnpicklingError, EOFError, OSError, ValueError) as e:
             debug_print(f"Corrupt/truncated pickle at {path}: {e}")
             return None
 
+    # ------------------------------------------------------------------
+    # get — read path
+    # ------------------------------------------------------------------
     def get(self, entity: str, idx: int) -> Optional[Any]:
-        """Load a single object. Returns None if not present."""
         per = self._meta.get(entity, {})
         info = per.get(idx)
         if info is None:
-            # Fall back to klepto in case meta is stale.
             archive = self._get_archive(entity)
             if str(idx) in archive:
                 return archive[str(idx)]
             return None
 
         if info["format"] == "packed":
+            # ... unchanged; numba-packed float array collections ...
             packed_dir = os.path.join(self._archive_path(entity), "_packed")
             npz_path = os.path.join(packed_dir, f"{idx}.npz")
             meta_path = os.path.join(packed_dir, f"{idx}.meta.pkl")
@@ -555,38 +591,54 @@ class KleptoEntityStore:
                 buf = data["buf"]
                 lengths = data["lengths"]
             with open(meta_path, "rb") as f:
-                meta = pickle.load(f)
-            # Optional integrity check.
+                meta = blosc2_pickle.load(f)
             h = int(_hash_bytes(buf.view(np.uint8)))
             if h != meta["hash"]:
                 debug_print(f"hash mismatch for {entity}/{idx} (continuing anyway)")
-            # Ensure dtype matches what we wrote.
             if str(buf.dtype) != meta["dtype"]:
                 buf = buf.astype(meta["dtype"])
             return self._unpack_float_arrays(buf, lengths)
 
-#        # pickle path
-#        fpath = os.path.join(self._archive_path(entity), f"K_{idx}/output.pkl")
-#        return self._safe_pickle_load(fpath)
         # pickle / bz2 path
         fpath = os.path.join(self._archive_path(entity), f"K_{idx}/output.pkl")
         raw = self._safe_pickle_load(fpath)
         if raw is None:
             return None
 
-        # We may have written a raw blob via klepto directly (older entries
-        # or unfiltered loads) — handle both shapes.
-        if _is_bz2_blob(raw):
-            return _unpack_bz2(raw)
+        # Case A: our B2NARR blob (top-level object is itself an NDArray
+        # serialized via pack_ndarray).
+        if is_packed_ndarray(raw):
+            return unpack_ndarray(raw)
 
-        # Fallback: try klepto directly (in case meta was stale and file naming
-        # differs between klepto versions).
-        if info["format"] == "bz2":
-            archive = self._get_archive(entity)
-            blob = archive[str(idx)]
-            if _is_bz2_blob(blob):
-                return _unpack_bz2(blob)
-        return raw
+        # Case B: our bz2 blob (top-level object was bz2-wrapped).
+        if _is_bz2_blob(raw):
+            return blosc2_pickle.loads(_unpack_bz2_bytes(raw))
+
+        # Case C: raw pickle. Load with our Blosc2AwareUnpickler so any
+        # embedded NDArrays come back as real NDArrays, not garbage bytes.
+        try:
+            return self._pickle_loads(raw)
+        except Exception as e:
+            debug_print(f"_pickle_loads failed for {entity}/{idx}: {e}")
+            # Fall back to stdlib pickle (old files, before this patch).
+            try:
+                return blosc2_pickle.loads(raw)
+            except Exception as e2:
+                debug_print(f"blosc2_pickle.loads also failed for {entity}/{idx}: {e2}")
+                return None
+
+    # _safe_pickle_load gives us raw bytes; we feed them to our unpickler.
+    @staticmethod
+    def _safe_pickle_load(path: str) -> Any:
+        """Read raw bytes from disk. Returns None if missing/truncated."""
+        if not os.path.exists(path):
+            return None
+        try:
+            with open(path, "rb") as f:
+                return f.read()
+        except OSError as e:
+            debug_print(f"Corrupt/truncated pickle at {path}: {e}")
+            return None
 
     def get_many(self, entity: str, idxs: Iterable[int]) -> Dict[int, Any]:
         """
