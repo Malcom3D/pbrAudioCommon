@@ -37,6 +37,15 @@ _EAGER_SINGLETONS = frozenset({
     "material_properties", "medium_properties",
 })
 
+# In-memory-only collections, never written to the store
+_EPHEMERAL_COLLECTIONS = frozenset({
+    "rigidbody_synth",
+    "resonance_synth",
+    "fracture_synth",
+    "particles_synth",
+    # add any future on-the-fly classes here
+})
+
 class EntityManager:
     _instance = None
     _initialized = False
@@ -62,15 +71,17 @@ class EntityManager:
         self._fracture_events: Dict[int, Any] = {}
         self._rigidbody_synth: Dict[int, Any] = {}
         self._resonance_synth: Dict[int, Any] = {}
+        self._fracture_synth: Dict[int, Any] = {}
+        self._particles_synth: Dict[int, Any] = {}
         self._singleton: Dict[str, Any] = {}
 
-        # Per-collection locks for thread-safe register/unregister
         self._locks: Dict[str, threading.RLock] = {
             coll: threading.RLock() for coll in (
                 "sources", "objects", "outputs", "output_datas",
                 "wave_propagators", "trajectories", "collisions",
                 "forces", "modal_vertices", "score_tracks",
                 "fracture_events", "rigidbody_synth", "resonance_synth",
+                "fracture_synth", "particles_synth",
             )
         }
 
@@ -101,6 +112,8 @@ class EntityManager:
             "fracture_events": "FractureEvent",
             "rigidbody_synth": "RigidBodySynth",
             "resonance_synth": "ResonanceSynth",
+            "fracture_synth": "FractureSynth",
+            "particles_synth": ["ParticlesSynth", "ParticlesModalSynth"],
         }
 
         # Build config + store
@@ -136,6 +149,8 @@ class EntityManager:
     def _hydrate_eager(self):
         """Load eager collections/singletons fully into RAM."""
         for name in _EAGER_COLLECTIONS:
+            if name in _EPHEMERAL_COLLECTIONS:
+                continue
             if not self._store.has_entity(name):
                 continue
             for idx in self._store.iter_keys(name):
@@ -170,8 +185,7 @@ class EntityManager:
             return None
 
         if not self._matches(coll, obj):
-            debug_print(f"[EntityManager] register: type mismatch "
-                        f"for '{entity}' ({type(obj).__name__})")
+            debug_print(f"[EntityManager] register: type mismatch for '{entity}' ({type(obj).__name__})")
             return None
 
         lock = self._locks[coll]
@@ -181,6 +195,9 @@ class EntityManager:
 
             container[idx] = obj
             self._hot_put((coll, idx), obj)
+
+        if coll in _EPHEMERAL_COLLECTIONS:
+            return idx
 
         # Persist outside of the lock (I/O is slow)
         self._store.put_sync(coll, idx, obj)
@@ -202,6 +219,9 @@ class EntityManager:
             container.pop(idx, None)
             self._hot.pop((coll, idx), None)
 
+        if coll in _EPHEMERAL_COLLECTIONS:
+            return
+
         self._store.delete(coll, idx)
 
     # ------------------------------------------------------------------
@@ -215,6 +235,7 @@ class EntityManager:
                 self._collisions, self._forces, self._modal_vertices,
                 self._score_tracks, self._fracture_events,
                 self._rigidbody_synth, self._resonance_synth,
+                self._fracture_synth, self._particles_synth,
             )
 
         # Singleton?
@@ -234,6 +255,12 @@ class EntityManager:
             return None
 
         container = getattr(self, f"_{coll}")
+
+        # Ephemeral: memory-only
+        if coll in _EPHEMERAL_COLLECTIONS:
+            if idx is None:
+                return container
+            return container.get(idx)
 
         if idx is None:
             # hydrate-on-demand for lazy collections returning whole dict
@@ -284,8 +311,8 @@ class EntityManager:
         return {}
 
     def _store_count(self, coll: str) -> int:
-        # store is the truth; but if lazy we may have unsaved writes →
-        # add len(container) when container is preferred
+        if coll in _EPHEMERAL_COLLECTIONS:
+            return len(getattr(self, f"_{coll}", {}))
         return len(self._store.iter_keys(coll)) or len(getattr(self, f"_{coll}", {}))
 
     # ------------------------------------------------------------------
@@ -294,12 +321,13 @@ class EntityManager:
     def dump(self, is_score_track_final: bool = False):
         """Flush all hot / in-memory collections to klepto."""
         for name in self.entities_map:
+            if name in _EPHEMERAL_COLLECTIONS:
+                continue
             container: Dict[int, Any] = getattr(self, f"_{name}", {})
             if not container:
                 continue
             # only write keys not yet in store
-            new_items = [(k, v) for k, v in container.items()
-                         if not self._store.exists(name, k)]
+            new_items = [(k, v) for k, v in container.items() if not self._store.exists(name, k)]
             if new_items:
                 self._store.put_sync_many(name, new_items)
 

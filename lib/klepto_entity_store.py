@@ -212,8 +212,8 @@ class KleptoEntityStore:
         "modal_vertices",
         "score_tracks",
         "fracture_events",
-        "rigidbody_synth",
-        "resonance_synth",
+#        "rigidbody_synth",
+#        "resonance_synth",
     )
 
     def __init__(self, config: Config):
