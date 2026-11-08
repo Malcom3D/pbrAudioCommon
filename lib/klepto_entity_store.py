@@ -113,7 +113,7 @@ def _hash_bytes(buf: np.ndarray) -> np.uint64:
 def _atomic_pickle_dump(obj: Any, path: str) -> None:
     tmp = path + ".tmp"
     with open(tmp, "wb") as f:
-        blosc2_pickle.dump(obj, f, protocol=pickle.HIGHEST_PROTOCOL)
+        pickle.dump(obj, f, protocol=pickle.HIGHEST_PROTOCOL)
     os.replace(tmp, path)
 
 def _is_bz2_blob(obj: Any) -> bool:
@@ -159,7 +159,7 @@ def _task_write_pickle(store, entity, idx, obj):
         debug_print(f"Post-write verify failed for {entity}/{idx}, rewriting atomically")
         tmp = fpath + ".tmp"
         with open(tmp, "wb") as f:
-            blosc2_pickle.dump(obj, f, protocol=pickle.HIGHEST_PROTOCOL)
+            pickle.dump(obj, f, protocol=pickle.HIGHEST_PROTOCOL)
         os.replace(tmp, fpath)
 
     size = os.path.getsize(fpath) if os.path.exists(fpath) else 0
@@ -177,7 +177,7 @@ def _task_write_packed(store, entity, idx, arrays):
 
     np.savez(npz_path, buf=buf, lengths=lengths)
     with open(meta_path, "wb") as f:
-        blosc2_pickle.dump(
+        pickle.dump(
             {
                 "dtype": dtype_str,
                 "n_arrays": len(arrays),
@@ -254,7 +254,7 @@ class KleptoEntityStore:
         # Atomic-ish write: write to tmp then rename.
         tmp = self._meta_path + ".tmp"
         with open(tmp, "wb") as f:
-            blosc2_pickle.dump(self._meta, f, protocol=pickle.HIGHEST_PROTOCOL)
+            pickle.dump(self._meta, f, protocol=pickle.HIGHEST_PROTOCOL)
         os.replace(tmp, self._meta_path)
 
     def _archive_path(self, entity: str) -> str:
@@ -393,7 +393,7 @@ class KleptoEntityStore:
 
         np.savez(npz_path, buf=buf, lengths=lengths)
         with open(meta_path, "wb") as f:
-            blosc2_pickle.dump(
+            pickle.dump(
                 {
                     "dtype": dtype_str,
                     "n_arrays": len(arrays),
@@ -496,7 +496,7 @@ class KleptoEntityStore:
                 np.savez(os.path.join(packed_dir, f"{idx}.npz"),
                          buf=buf, lengths=lengths)
                 with open(os.path.join(packed_dir, f"{idx}.meta.pkl"), "wb") as f:
-                    blosc2_pickle.dump(
+                    pickle.dump(
                         {
                             "dtype": dtype_str,
                             "n_arrays": len(payload),
@@ -522,7 +522,7 @@ class KleptoEntityStore:
 
                 # Score_track path: pick directly with the blosc2-aware
                 # pickler, bypassing klepto's own dumper (which uses stdlib
-                # blosc2_pickle.dump and would choke on NDArrays).
+                # pickle.dump and would choke on NDArrays).
                 if entity in _PRESERVE_BLOSC2_ENTITIES:
                     fpath = os.path.join(self._archive_path(entity), f"K_{idx}/output.pkl")
                     os.makedirs(os.path.dirname(fpath), exist_ok=True)
