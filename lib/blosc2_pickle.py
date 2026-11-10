@@ -46,8 +46,8 @@ _NDARRAY_MAGIC = b"B2NARR"
 _NDARRAY_HEADER_LEN = len(_NDARRAY_MAGIC) + 4  # magic + 4-byte payload len
 
 # Blosc2 settings tuned for sparse bool / occasional float arrays.
-_DEFAULT_CPARAMS = dict(codec=blosc2.Codec.LZ4, typesize=1, clevel=5, nthreads=8)
-_DEFAULT_DPARAMS = dict(nthreads=16)
+_DEFAULT_CPARAMS = dict(codec=blosc2.Codec.LZ4, typesize=1, clevel=3, nthreads=16)
+_DEFAULT_DPARAMS = dict(nthreads=32)
 
 def _ndarray_to_blob(nd: blosc2.NDArray) -> bytes:
     """
@@ -172,8 +172,7 @@ def from_maybe_ndarray(obj: Any) -> Any:
             return np.unpackbits(packed, axis=-1, count=orig_shape[-1]).astype(bool)
         return obj[:]
     if isinstance(obj, _PackedBool):
-        return np.unpackbits(obj.data, axis=-1,
-                             count=obj.orig_shape[-1]).astype(bool)
+        return np.unpackbits(obj.data, axis=-1, count=obj.orig_shape[-1]).astype(bool)
     return obj
 
 # ---------------------------------------------------------------------------
