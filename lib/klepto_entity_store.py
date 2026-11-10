@@ -154,7 +154,7 @@ def _task_write_pickle(store, entity, idx, obj):
     # Verify the pickle actually loads; if not, rewrite atomically.
     try:
         with open(fpath, "rb") as f:
-            blosc2_pickle.load(f)
+            pickle.load(f)
     except Exception:
         debug_print(f"Post-write verify failed for {entity}/{idx}, rewriting atomically")
         tmp = fpath + ".tmp"
@@ -238,7 +238,7 @@ class KleptoEntityStore:
         if os.path.exists(self._meta_path):
             try:
                 with open(self._meta_path, "rb") as f:
-                    raw = blosc2_pickle.load(f)
+                    raw = pickle.load(f)
                 # JSON keys are strings; normalise ints.
                 self._meta = {
                     ent: {int(k): v for k, v in per.items()}
@@ -563,7 +563,7 @@ class KleptoEntityStore:
             return None
         try:
             with open(path, "rb") as f:
-                return blosc2_pickle.load(f)
+                return pickle.load(f)
         except (pickle.UnpicklingError, EOFError, OSError, ValueError) as e:
             debug_print(f"Corrupt/truncated pickle at {path}: {e}")
             return None
@@ -591,7 +591,7 @@ class KleptoEntityStore:
                 buf = data["buf"]
                 lengths = data["lengths"]
             with open(meta_path, "rb") as f:
-                meta = blosc2_pickle.load(f)
+                meta = pickle.load(f)
             h = int(_hash_bytes(buf.view(np.uint8)))
             if h != meta["hash"]:
                 debug_print(f"hash mismatch for {entity}/{idx} (continuing anyway)")
@@ -607,8 +607,8 @@ class KleptoEntityStore:
 
         # Case A: our B2NARR blob (top-level object is itself an NDArray
         # serialized via pack_ndarray).
-        if is_packed_ndarray(raw):
-            return unpack_ndarray(raw)
+        if blosc2_pickle.is_packed_ndarray(raw):
+            return blosc2_pickle.unpack_ndarray(raw)
 
         # Case B: our bz2 blob (top-level object was bz2-wrapped).
         if _is_bz2_blob(raw):

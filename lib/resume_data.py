@@ -63,4 +63,4 @@ class ResumeData:
             # Lazy collections: DON'T hydrate now. Just make sure they're
             # discoverable later via EntityManager.get(name) — which pulls
             # from the store on demand.
-            debug_print(f"[ResumeData] {name}: {len(keys)} items available lazily")
+            debug_print(f"{name}: {len(keys)} items available lazily")

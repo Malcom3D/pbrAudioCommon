@@ -92,7 +92,7 @@ def unpack_ndarray(blob: bytes) -> blosc2.NDArray:
         raise ValueError("Not a B2NARR blob")
     hdr = len(_NDARRAY_MAGIC)
 #    (length,) = int.from_bytes(blob[hdr : hdr + 4], "little"),
-    length = int.from_bytes(blob[hdr : hdr + 4], "little"),
+    length = int.from_bytes(blob[hdr : hdr + 4], "little")
     payload = bytes(blob[hdr + 4 : hdr + 4 + length])
     if len(payload) != length:
         raise ValueError(
