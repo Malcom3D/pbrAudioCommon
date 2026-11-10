@@ -100,8 +100,8 @@ class StorageConfig:
     backend: str = "blosc2"  # "blosc2" or "zarr"
     root_path: str = "./pbrAudioCache/storage"
     # Blosc2 specific
-    blosc2_codec: str = "ZSTD"
-    blosc2_clevel: int = 5
+    blosc2_codec: str = "LZ4"
+    blosc2_clevel: int = 1
     blosc2_filters: List[str] = field(default_factory=lambda: ["NOFILTER"])
     blosc2_cparams_threads: int = 8
     blosc2_dparams_threads: int = 16

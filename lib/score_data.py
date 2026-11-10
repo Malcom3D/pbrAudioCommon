@@ -43,8 +43,8 @@ from ..lib.blosc2_pickle import to_maybe_ndarray, from_maybe_ndarray, is_packed_
 # Below these thresholds we keep plain numpy and let pickle/bz2 handle it.
 # Above them, we wrap in blosc2 — the store's pickler will then ship the
 # compressed cframe directly.
-_BLOSC2_BOOL_THRESHOLD_BYTES = 1024 * 1024       # sparse bool matrices
-_BLOSC2_FLOAT_THRESHOLD_BYTES = 1024 * 1024     # 4x higher; floats don't
+_BLOSC2_BOOL_THRESHOLD_BYTES = 2048 * 1024       # sparse bool matrices
+_BLOSC2_FLOAT_THRESHOLD_BYTES = 2048 * 1024     # 4x higher; floats don't
                                                # compress sparse-like, and
                                                # blosc2 overhead is real.
 
