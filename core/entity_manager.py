@@ -39,6 +39,7 @@ _EAGER_SINGLETONS = frozenset({
 
 # In-memory-only collections, never written to the store
 _EPHEMERAL_COLLECTIONS = frozenset({
+    "connected_buffer",
     "rigidbody_synth",
     "resonance_synth",
     "fracture_synth",
