@@ -46,8 +46,8 @@ _NDARRAY_MAGIC = b"B2NARR"
 _NDARRAY_HEADER_LEN = len(_NDARRAY_MAGIC) + 4  # magic + 4-byte payload len
 
 # Blosc2 settings tuned for sparse bool / occasional float arrays.
-_DEFAULT_CPARAMS = dict(codec=blosc2.Codec.LZ4, typesize=1, clevel=1, nthreads=16)
-_DEFAULT_DPARAMS = dict(nthreads=32)
+_DEFAULT_CPARAMS = dict(codec=blosc2.Codec.LZ4, typesize=1, clevel=1, nthreads=8)
+_DEFAULT_DPARAMS = dict(nthreads=16)
 
 def _ndarray_to_blob(nd: blosc2.NDArray) -> bytes:
     """
@@ -95,10 +95,7 @@ def unpack_ndarray(blob: bytes) -> blosc2.NDArray:
     length = int.from_bytes(blob[hdr : hdr + 4], "little")
     payload = bytes(blob[hdr + 4 : hdr + 4 + length])
     if len(payload) != length:
-        raise ValueError(
-            f"B2NARR payload length mismatch: got {len(payload)}, "
-            f"expected {length}"
-        )
+        raise ValueError(f"B2NARR payload length mismatch: got {len(payload)}, expected {length}")
     return _blob_to_ndarray(payload)
 
 
@@ -196,7 +193,7 @@ class _PackedBool:
         self.orig_shape = orig_shape
 
     def __getstate__(self):
-               return {"data": self.data, "orig_shape": self.orig_shape}
+        return {"data": self.data, "orig_shape": self.orig_shape}
 
     def __setstate__(self, state):
         self.data = state["data"]

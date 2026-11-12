@@ -509,8 +509,7 @@ class KleptoEntityStore:
                 size = os.path.getsize(os.path.join(packed_dir, f"{idx}.npz"))
 
             elif fmt == "bz2":
-                archive[str(idx)] = _pack_bz2(self._pickle_dumps(payload),
-                                              compresslevel=self.config.bz2_compresslevel)
+                archive[str(idx)] = _pack_bz2(self._pickle_dumps(payload), compresslevel=self.config.bz2_compresslevel)
                 if self.config.cached:
                     archive.dump()
                 size = 0

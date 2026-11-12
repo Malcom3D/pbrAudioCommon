@@ -91,8 +91,8 @@ class KleptoEntityStoreConfig:
     # handed to klepto. On read, the blob is decompressed and unpickled.
     bz2_entities: Tuple[str, ...] = ("score_tracks",)
     # Minimum payload size (bytes) before compressing.
-    bz2_min_bytes: int = 1 << 14      # 16 KiB
-    bz2_compresslevel: int = 9        # 1 (fast) .. 9 (best)
+    bz2_min_bytes: int = 1 << 24      # 16 MiB
+    bz2_compresslevel: int = 5        # 1 (fast) .. 9 (best)
 
 @dataclass
 class StorageConfig:
@@ -503,6 +503,6 @@ class Config:
             numba_min_bytes=klepto_storage.get('numba_min_bytes', 1 << 16),
             fsync=klepto_storage.get('fsync', True),
             bz2_entities=tuple(klepto_storage.get('bz2_entities', ("score_tracks",))),
-            bz2_min_bytes=klepto_storage.get('bz2_min_bytes', 1 << 14),
-            bz2_compresslevel=klepto_storage.get('bz2_compresslevel', 9),
+            bz2_min_bytes=klepto_storage.get('bz2_min_bytes', 1 << 24),
+            bz2_compresslevel=klepto_storage.get('bz2_compresslevel', 5),
         )
