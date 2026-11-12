@@ -37,9 +37,13 @@ _EAGER_SINGLETONS = frozenset({
     "material_properties", "medium_properties",
 })
 
+_EPHEMERAL_SINGLETONS = frozenset({
+    "connected_buffer",
+    # add any future non-picklable singletons here
+})
+
 # In-memory-only collections, never written to the store
 _EPHEMERAL_COLLECTIONS = frozenset({
-    "connected_buffer",
     "rigidbody_synth",
     "resonance_synth",
     "fracture_synth",
@@ -165,6 +169,8 @@ class EntityManager:
         for name in _EAGER_SINGLETONS:
             if name == "config":
                 continue  # already registered
+            if name in _EPHEMERAL_SINGLETONS:
+                continue  # never persisted; nothing to hydrate
             obj = self._store.get(name, 0)
             if obj is not None:
                 self._singleton[name] = obj
@@ -176,7 +182,8 @@ class EntityManager:
         # --- singleton ---
         if entity in self.sigleton_map:
             self._singleton[entity] = obj
-            self._store.put_sync(entity, 0, obj)
+            if entity not in _EPHEMERAL_SINGLETONS:
+                self._store.put_sync(entity, 0, obj)
             return None
 
         # --- collection ---
@@ -208,7 +215,8 @@ class EntityManager:
         if entity in self.sigleton_map:
             if entity in self._singleton:
                 del self._singleton[entity]
-                self._store.delete(entity, 0)
+                if entity not in _EPHEMERAL_SINGLETONS:
+                    self._store.delete(entity, 0)
             return
 
         coll = self._resolve_collection(entity)
@@ -333,6 +341,8 @@ class EntityManager:
                 self._store.put_sync_many(name, new_items)
 
         for name, obj in self._singleton.items():
+            if name in _EPHEMERAL_SINGLETONS:
+                continue
             if not self._store.exists(name, 0):
                 self._store.put_sync(name, 0, obj)
 
