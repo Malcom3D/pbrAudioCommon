@@ -43,8 +43,8 @@ from ..lib.blosc2_pickle import to_maybe_ndarray, from_maybe_ndarray, is_packed_
 # Below these thresholds we keep plain numpy and let pickle/bz2 handle it.
 # Above them, we wrap in blosc2 — the store's pickler will then ship the
 # compressed cframe directly.
-_BLOSC2_BOOL_THRESHOLD_BYTES = 512 * 1024       # sparse bool matrices
-_BLOSC2_FLOAT_THRESHOLD_BYTES = 512 * 1024     # 4x higher; floats don't
+_BLOSC2_BOOL_THRESHOLD_BYTES = 1024 * 1024       # sparse bool matrices
+_BLOSC2_FLOAT_THRESHOLD_BYTES = 1024 * 1024     # 4x higher; floats don't
                                                # compress sparse-like, and
                                                # blosc2 overhead is real.
 
@@ -104,6 +104,10 @@ class ScoreEvent:
         self.force         = _to_blosc2("force", self.force, threshold=_BLOSC2_FLOAT_THRESHOLD_BYTES)
         self.coupling_data = _to_blosc2("coupling_data", self.coupling_data, threshold=_BLOSC2_FLOAT_THRESHOLD_BYTES)
 
+        # Detect width of vertex_ids once, so `unpackbits` uses the right count
+        # at every call — no extra blosc2 metadata reads per lookup.
+        self._n_vertices = self._resolve_vertex_count()
+
     def _get(self, name):
         """Return field as numpy array (decompressed/materialized)."""
         v = getattr(self, name)
@@ -149,7 +153,7 @@ class ScoreEvent:
         force_v = self._row("force", sample_idx)
         area_v = self._row("contact_area", sample_idx)
         coupling_v = self._row("coupling_data", sample_idx)
-        active_verts = np.unique(np.nonzero(vertex_ids_v[sample_idx])).tolist()
+        active_verts = self._active_vertices(sample_idx)
         return (
             type_v,
             active_verts,
@@ -158,6 +162,61 @@ class ScoreEvent:
             self.coll_obj,
             coupling_v,
         )
+
+    def _active_vertices(self, sample_idx: int) -> list:
+        """
+        Return the vertex indices active at `sample_idx`.
+
+        For bool vertex_ids this is what `np.unique(np.nonzero(...))` used to
+        produce, but without decompressing the whole matrix.
+        """
+        v = self.vertex_ids
+        if v is None:
+            return []
+
+        # --- numpy path (bool already) ---
+        if isinstance(v, np.ndarray) and v.dtype == np.bool_:
+            return np.flatnonzero(v[sample_idx]).tolist()
+
+        # --- blosc2 packbits path (the common, expensive case) ---
+        if isinstance(v, blosc2.NDArray):
+            enc = v.vlmeta.get("encoding", None)
+            if enc == "packbits_bool":
+                n_vertices = self._n_vertices
+                # Read only the row's packed bytes.
+                packed_row = np.asarray(v[sample_idx])            # (ceil(n/8),) uint8
+                # Unpack just this row.
+                unpacked = np.unpackbits(packed_row, count=n_vertices)
+                return np.flatnonzero(unpacked).tolist()
+            # Non-packed blosc2 array
+            return np.flatnonzero(np.asarray(v[sample_idx])).tolist()
+
+        # Fallback for _PackedBool and other containers
+        n_vertices = self._n_vertices
+        if hasattr(v, "data") and hasattr(v, "orig_shape"):
+            packed_row = v.data[sample_idx]
+            unpacked = np.unpackbits(packed_row, count=n_vertices)
+            return np.flatnonzero(unpacked).tolist()
+
+        return np.unique(np.nonzero(from_maybe_ndarray(v)[sample_idx])).tolist()
+
+    def _resolve_vertex_count(self) -> int:
+        v = self.vertex_ids
+        if v is None:
+            return 0
+        if isinstance(v, blosc2.NDArray):
+            orig = v.vlmeta.get("orig_shape", None)
+            if orig is not None and len(orig) >= 2:
+                return int(orig[-1])
+            # Not packed — last axis is n_vertices
+            if v.ndim >= 2:
+                return int(v.shape[-1])
+            return 0
+        if isinstance(v, np.ndarray) and v.ndim >= 2:
+            return int(v.shape[-1])
+        if hasattr(v, "orig_shape"):
+            return int(v.orig_shape[-1])
+        return 0
 
     # -- Disk round-trip (tar.gz) ------------------------------------------
     # Kept for backward compatibility; not used by KleptoEntityStore. Uses
