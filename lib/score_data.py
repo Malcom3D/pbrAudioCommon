@@ -252,7 +252,7 @@ class ScoreEvent:
     def _materialize_slices(self, start, stop):
         """Return slices of the needed fields in one shot."""
         type_v = self._slice("type", slice(start, stop))
-        force_slice = self._slice("force", slice slice(start, stop))
+        force_slice = self._slice("force", slice(start, stop))
         area_slice = self._slice("contact_area", slice(start, stop))
         coupling_slice = self._slice("coupling_data", slice(start, stop))
 
