@@ -159,7 +159,7 @@ def from_maybe_ndarray(obj: Any) -> Any:
 
     - blosc2.NDArray → materialized numpy
     - _PackedBool → unpacked bool numpy
-    - numpy / None / other → returned as-is-is
+    - numpy / None / other → returned as-is
     """
     if isinstance(obj, blosc2.NDArray):
         enc = obj.vlmeta.get("encoding", None)

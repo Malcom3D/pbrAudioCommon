@@ -135,12 +135,12 @@ class EntityManager:
         self._hot_cache_size = hot_cache_size
 
         # ------------------------------------------------------------------
-               # Hydrate eager collections + singletons from disk
+        # Hydrate eager collections + singletons from disk
         # ------------------------------------------------------------------
         self._hydrate_eager()
 
         # ------------------------------------------------------------------
-        # Let ResumeData load the rest (it also calls register())
+        # ResumeData load the rest (it also calls register())
         # ------------------------------------------------------------------
         try:
             from ..lib.resume_data import ResumeData
@@ -200,7 +200,6 @@ class EntityManager:
         with lock:
             container: Dict[int, Any] = getattr(self, f"_{coll}")
             idx = (max(container.keys()) + 1) if container else 0
-
             container[idx] = obj
             self._hot_put((coll, idx), obj)
 
@@ -287,7 +286,7 @@ class EntityManager:
         if idx in container:
             return container[idx]
 
-        # Not hot — try hot cache, then disk
+        # Not hot - try hot cache, then disk
         hit = self._hot_get((coll, idx))
         if hit is not None:
             with self._locks[coll]:
