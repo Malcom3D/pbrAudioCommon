@@ -131,20 +131,20 @@ class ScoreEvent:
 #        area_v        = self._get("contact_area")
 #        coupling_v    = self._get("coupling_data")
         """Get all events at a specific sample index."""
-        type_v        = self.type or self._get("type")
-        vertex_ids_v  = self.vertex_ids or blosc2.frombuffer(bytes(self._get("vertex_ids"))
-        force_v       = self.force or blosc2.frombuffer(bytes(self._get("force"))
-        area_v        = self.contact_area or blosc2.frombuffer(bytes(self._get("contact_area"))
-        coupling_v    = self.coupling_data or blosc2.frombuffer(bytes(self._get("coupling_data"))
+        self.type = self.type or self._get("type")
+        self.vertex_ids = self.vertex_ids or blosc2.frombuffer(bytes(self._get("vertex_ids"))
+        self.force = self.force or blosc2.frombuffer(bytes(self._get("force"))
+        self.contact_area = self.contact_area or blosc2.frombuffer(bytes(self._get("contact_area"))
+        self.coupling_data = self.coupling_data or blosc2.frombuffer(bytes(self._get("coupling_data"))
 
         active_verts = np.unique(np.nonzero(vertex_ids_v[sample_idx])).tolist()
         return (
-            type_v[sample_idx][0],
-            active_verts,
-            force_v[sample_idx] if force_v is not None else None,
-            area_v[sample_idx] if area_v is not None else None,
+            self.type[sample_idx][0],
+            self.vertex_ids,
+            self.force[sample_idx] if self.force is not None else None,
+            self.contact_area[sample_idx] if self.contact_area is not None else None,
             self.coll_obj,
-            coupling_v[sample_idx] if coupling_v is not None else None,
+            self.coupling_data[sample_idx] if self.coupling_data is not None else None,
         )
 
     # -- Disk round-trip (tar.gz) ------------------------------------------
