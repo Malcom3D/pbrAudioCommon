@@ -163,10 +163,10 @@ def from_maybe_ndarray(obj: Any) -> Any:
     """
     if isinstance(obj, blosc2.NDArray):
         enc = obj.vlmeta.get("encoding", None)
-        if enc == "packbits_bool":
-            orig_shape = tuple(obj.vlmeta["orig_shape"])
-            packed = obj[:]
-            return np.unpackbits(packed, axis=-1, count=orig_shape[-1]).astype(bool)
+#        if enc == "packbits_bool":
+#            orig_shape = tuple(obj.vlmeta["orig_shape"])
+#            packed = obj[:]
+#            return np.unpackbits(packed, axis=-1, count=orig_shape[-1]).astype(bool)
         return obj[:]
     if isinstance(obj, _PackedBool):
         return np.unpackbits(obj.data, axis=-1, count=obj.orig_shape[-1]).astype(bool)
