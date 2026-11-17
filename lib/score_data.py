@@ -132,10 +132,10 @@ class ScoreEvent:
 #        coupling_v    = self._get("coupling_data")
         """Get all events at a specific sample index."""
         type_v        = self.type or self._get("type")
-        vertex_ids_v  = self.vertex_ids or blosc2.frombuffer(byte(self._get("vertex_ids"))
-        force_v       = self.force or blosc2.frombuffer(byte(self._get("force"))
-        area_v        = self.contact_area or blosc2.frombuffer(byte(self._get("contact_area"))
-        coupling_v    = self.coupling_data or blosc2.frombuffer(byte(self._get("coupling_data"))
+        vertex_ids_v  = self.vertex_ids or blosc2.frombuffer(bytes(self._get("vertex_ids"))
+        force_v       = self.force or blosc2.frombuffer(bytes(self._get("force"))
+        area_v        = self.contact_area or blosc2.frombuffer(bytes(self._get("contact_area"))
+        coupling_v    = self.coupling_data or blosc2.frombuffer(bytes(self._get("coupling_data"))
 
         active_verts = np.unique(np.nonzero(vertex_ids_v[sample_idx])).tolist()
         return (
