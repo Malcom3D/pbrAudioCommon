@@ -131,7 +131,7 @@ class ScoreEvent:
         if isinstance(v, np.ndarray):
             return v[sample_idx]
 
-        # blosc2 path: single-row slice — decompresses only that row
+        # blosc2 path: single-row slice - decompresses only that row
         if isinstance(v, blosc2.NDArray):
             row = v[sample_idx]
             return np.asarray(row)
@@ -217,6 +217,63 @@ class ScoreEvent:
         if hasattr(v, "orig_shape"):
             return int(v.orig_shape[-1])
         return 0
+
+    # ------------------------------------------------------------------
+    # iterate a contiguous event
+    # ------------------------------------------------------------------
+    def iter_events(self, start: int, stop: int):
+        """
+        Yield (sample_idx, type, verts, force, area, coll_obj, coupling) for
+        each sample in [start, stop). Decompresses the field decompr once.
+        """
+        n = stop - start
+        if n <= 0:
+            return
+
+        # Materialise the needed fields once
+        type_v, vertex_slice, force_slice, area_slice, coupling_slice = self._materialize_slices(start, stop)
+
+        for i in range(n):
+            sample_idx = start + i
+            type_val = int(type_v[i][0])
+
+            if vertex_slice is not None and vertex_slice is not True:
+                packed_row = vertex_slice[i]
+                unpacked = np.unpackbits(packed_row, count=self._n_vertices)
+                verts = np.flatnonzero(unpacked).tolist()
+            else:
+                verts = self._active_vertices(sample_idx)
+
+            force_row = force_slice[i]
+            area_row = area_slice[i]
+            coupling_row = coupling_slice[i]
+            yield (sample_idx, type_val, verts, force_row, area_row, self.coll_obj, coupling_row)
+
+    def _materialize_slices(self, start, stop):
+        """Return slices of the needed fields in one shot."""
+        type_v = self._slice("type", slice(start, stop))
+        force_slice = self._slice("force", slice slice(start, stop))
+        area_slice = self._slice("contact_area", slice(start, stop))
+        coupling_slice = self._slice("coupling_data", slice(start, stop))
+
+        vertex_slice = None
+        if isinstance(self.vertex_ids, blosc2.NDArray):
+            enc = self.vertex_ids.vlmeta.get("encoding", None)
+            if enc == "packbits_bool":
+                # Row slice: ( (n_samples, ceil(n/8)) — still compressed rows.
+                vertex_slice = np.asarray(self.vertex_ids[start:stop])
+
+        return type_v, vertex_slice, force_slice, area_slice, coupling_slice
+
+    def _slice(self, name: str, sl: slice):
+        v = getattr(self, name)
+        if v is None:
+            return None
+        if isinstance(v, np.ndarray):
+            return v[sl]
+        if isinstance(v, blosc2.NDArray):
+            return np.asarray(v[sl])
+        return from_maybe_ndarray(v)[sl]
 
     # -- Disk round-trip (tar.gz) ------------------------------------------
     # Kept for backward compatibility; not used by KleptoEntityStore. Uses
