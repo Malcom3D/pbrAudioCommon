@@ -117,6 +117,24 @@ class ScoreEvent:
         """
         return dict(self.__dict__)
 
+    def _row(self, name: str, sample_idx: int):
+        """Return row `sample_idx` of a 1D/2D field, without unpacking the whole array."""
+        v = getattr(self, name)
+        if v is None:
+            return None
+
+        # Fast path: already a numpy array
+        if isinstance(v, np.ndarray):
+            return v[sample_idx]
+
+        # blosc2 path: single-row slice — decompresses only that row
+        if isinstance(v, blosc2.NDArray):
+            row = v[sample_idx]
+            return np.asarray(row)
+
+        # Unknown container: fall back to the safe path
+        return from_maybe_ndarray(v)[sample_idx]
+
     def __setstate__(self, state):
         self.__dict__.update(state)
         # Re-apply the compression policy. Old pickles might still carry
@@ -125,20 +143,20 @@ class ScoreEvent:
 
     def get_event_at_sample(self, sample_idx: int):
         """Get all events at a specific sample index."""
-        type_v        = self._get("type")
-        vertex_ids_v  = self._get("vertex_ids")
-        force_v       = self._get("force")
-        area_v        = self._get("contact_area")
-        coupling_v    = self._get("coupling_data")
-
-#        active_verts = np.unique(np.nonzero(vertex_ids_v[sample_idx])).tolist()
+        type_v = self._row("type", sample_idx)
+        type_v = int(type_v[0])
+        vertex_ids_v = self._row("vertex_ids", sample_idx)
+        force_v = self._row("force", sample_idx)
+        area_v = self._row("contact_area", sample_idx)
+        coupling_v = self._row("coupling_data", sample_idx)
+        active_verts = np.unique(np.nonzero(vertex_ids_v[sample_idx])).tolist()
         return (
-            type_v[sample_idx][0],
-            vertex_ids_v,
-            force_v[sample_idx] if force_v is not None else None,
-            contact_area_v[sample_idx] if contact_area_v is not None else None,
-            coll_obj,
-            coupling_data_v[sample_idx] if coupling_data_v is not None else None,
+            type_v,
+            active_verts,
+            force_v,
+            area_v,
+            self.coll_obj,
+            coupling_v,
         )
 
     # -- Disk round-trip (tar.gz) ------------------------------------------
