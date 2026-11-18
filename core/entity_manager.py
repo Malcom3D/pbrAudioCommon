@@ -82,7 +82,7 @@ class EntityManager:
                 'score_tracks': 'ScoreTrack',
                 'fracture_events': 'FractureEvent',
                 'rigidbody_synth': 'RigidBodySynth',
-                'resonance_synth': 'ResonanceSynth'
+                'resonance_synth': 'ResonanceSynth',
                 'fracture_synth': 'FractureSynth',
                 'particles_synth': ['ParticlesSynth', 'ParticlesModalSynth']
             }
