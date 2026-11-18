@@ -398,13 +398,15 @@ class KleptoEntityStore:
     def _pick_encoding(self, entity: str, obj: Any) -> Tuple[str, Any, Any]:
         """
         Decide how to serialize `obj` for the given entity.
-
         Returns (fmt, payload, task_builder) where:
           fmt            : 'packed' | 'bz2' | 'pickle'
           payload        : the object to hand to the writer (arrays list,
                            the raw object, or the object itself)
           task_builder   : callable(self, entity, idx, payload) -> delayed
         """
+        if entity in _PRESERVE_BLOSC2_ENTITIES:
+            return "pickle", obj,, self._delayed_write_pickle
+
         use_bz2 = (
             entity in self.config.bz2_entities
             and self.config.compress is not False   # let caller opt out
@@ -634,11 +636,9 @@ class KleptoEntityStore:
     def dump_entity_manager(self, entity_manager: Any, entities: Optional[Tuple[str, ...]] = None) -> None:
         """
         Persist every registered entity from an EntityManager.
-
         Uses the EntityManager's own getters so we never touch private state.
         """
         entities = entities or self.DEFAULT_ENTITIES
-
         for entity in entities:
             try:
                 collection = entity_manager.get(entity)
@@ -670,18 +670,15 @@ class KleptoEntityStore:
     def load_into_entity_manager(self, entity_manager: Any, entities: Optional[Tuple[str, ...]] = None) -> None:
         """
         Load persisted entities back into an EntityManager.
-
         This mirrors ResumeData.load_data() but reads from our store instead
         of the ad-hoc directories.
         """
         entities = entities or self.DEFAULT_ENTITIES
-
         for entity in entities:
             idxs = self.keys(entity)
             if not idxs:
                 debug_print(f"No persisted data for entity '{entity}'")
                 continue
-
             loaded = self.get_many(entity, idxs)
             entity_loaded = 0
             entity_failed = 0
@@ -713,9 +710,10 @@ class KleptoEntityStore:
         """Force any cached archives to disk. No-op when cached=False."""
         for archive in self._archives.values():
             try:
+                debug_print("try dump archive:", [k for k, v in self._archives.items() if v == archive][0])
                 archive.dump()
             except Exception as e:
-                debug_print(f"flush failed: {e}")
+                debug_print(f"flush failed:", [k for k, v in self._archives.items() if v == archive][0], "{e}")
 
     def close(self) -> None:
         self.flush()

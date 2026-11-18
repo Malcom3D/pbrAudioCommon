@@ -26,6 +26,8 @@ import numpy as np
 from dataclasses import dataclass, field
 from typing import List, Tuple, Dict, Any, Optional, Union
 
+from ..lib.blosc2_pickle import wrap_for_pickle, unwrap_from_pickle
+
 # 16 MiB threshold for switching from in-memory numpy to blosc2 NDArray storage.
 _BLOSC2_THRESHOLD_BYTES = 16 * 1024 * 1024  # 16 MiB
 
@@ -49,9 +51,9 @@ def _to_blosc2(tag: str, arr: Union[np.ndarray, blosc2.NDArray, None]) -> Union[
         return arr
 
     # Create a specific cparams/dparams for score payloads.
-    cparams = blosc2.CParams(
-        codec=blosc2.Codec.LZ4, typesize=1, clevel=1, nthreads=8,
-    )
+    cparams = blosc2.CParams(codec=blosc2.Codec.LZ4, clevel=1, nthreads=8)
+    if tag == 'vertex_ids':
+        cparams = blosc2.CParams(codec=blosc2.Codec.LZ4, typesize=1, clevel=1, nthreads=8)
     dparams = blosc2.DParams(nthreads=16)
     nd = blosc2.asarray(arr, cparams=cparams, dparams=dparams)
     nd.vlmeta["score_tag"] = tag
@@ -92,22 +94,29 @@ class ScoreEvent:
 
     def _get(self, name):
         v = getattr(self, name)
-        if isinstance(v, blosc2.NDArray):
-            return v[:]
+#        if isinstance(v, blosc2.NDArray):
+#            return v[:]
         return v
 
     def __getstate__(self):
         state = self.__dict__.copy()
-        # blosc2 NDArrays don't pickle reliably; ship raw numpy to the pickler.
+        # Preserve blosc2 payloads as compressed blobs rather rather than
+        # materializing them into numpy arrays. This is what keeps
+        # `vertex_ids` cheap to persist through KleptoEntityStore.
         for k in ("type", "vertex_ids", "contact_area", "force", "coupling_data"):
             v = state.get(k)
             if isinstance(v, blosc2.NDArray):
-                state[k] = v[:]  # materialize
+                state[k] = wrap_for_pickle(v)
         return state
 
     def __setstate__(self, state):
         self.__dict__.update(state)
-        self.__post_init__()  # re-apply the >16MB -> NDArray policy
+        # Rebuild live blosc2 NDArrays from the picklable proxies.
+        for k in ("type", "vertex_ids", "contact_area", "force", "coupling_data"):
+            v = self.__dict__.get(k)
+            if v is not None:
+                self.__dict__[k] = unwrap_from_pickle(v)
+        self.__post_init__()   # re-apply >16MB → NDArray policy
 
     def get_event_at_sample(self, sample_idx: int):
         """Get all events at a specific sample index."""

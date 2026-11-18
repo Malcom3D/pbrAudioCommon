@@ -38,7 +38,7 @@ _EAGER_SINGLETONS = frozenset({
 })
 
 _EAGER_EFFIMERAL = frozenset({
-    "connected_buffer"
+    "connected_buffer", "rigidbody_synth", "resonance_synth"
 })
 
 class EntityManager:
@@ -164,6 +164,8 @@ class EntityManager:
         # --- singleton ---
         if entity in self.sigleton_map:
             self._singleton[entity] = obj
+            if entity in _EAGER_EFFIMERAL:
+                return None
             self._store.put_sync(entity, 0, obj)
             return None
 
@@ -174,16 +176,16 @@ class EntityManager:
             return None
 
         if not self._matches(coll, obj):
-            debug_print(f"[EntityManager] register: type mismatch "
-                        f"for '{entity}' ({type(obj).__name__})")
+            debug_print(f"[EntityManager] register: type mismatch for '{entity}' ({type(obj).__name__})")
             return None
 
         lock = self._locks[coll]
         with lock:
             container: Dict[int, Any] = getattr(self, f"_{coll}")
             idx = (max(container.keys()) + 1) if container else 0
-
             container[idx] = obj
+            if entity in _EAGER_EFFIMERAL:
+                return None
             self._hot_put((coll, idx), obj)
 
         # Persist outside of the lock (I/O is slow)
