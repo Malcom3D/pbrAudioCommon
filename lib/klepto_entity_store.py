@@ -710,7 +710,6 @@ class KleptoEntityStore:
         """Force any cached archives to disk. No-op when cached=False."""
         for archive in self._archives.values():
             try:
-                debug_print("try dump archive:", [k for k, v in self._archives.items() if v == archive][0])
                 archive.dump()
             except Exception as e:
                 debug_print(f"flush failed:", [k for k, v in self._archives.items() if v == archive][0], {e})
