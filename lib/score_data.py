@@ -16,289 +16,127 @@
 # along with pbrAudio.  If not, see <https://www.gnu.org/licenses/>.
 # SPDX-License-Identifier: GPL-3.0-or-later
 
-# Changes from previous version:
-#   * Drop the 16 MiB *numpy* threshold for blosc2 conversion; replaced by
-#     a tiered policy:
-#       - bool arrays: packbits, then blosc2 if >= 64 KiB packed (or if
-#         the original was "very sparse", which bools usually are).
-#       - float arrays: blosc2 if >= 64 KiB.
-#     Both thresholds are much lower than before (16 MiB) — this is the fix.
-#   * `__getstate__` now keeps blosc2.NDArray objects intact so the store's
-#     `Blosc2AwarePickler` can serialize them as raw cframes (compression
-#     preserved) instead of materializing to numpy.
-#   * `__setstate__` re-applies the size/encoding policy.
-
 import os
 import re
+import gzip
 import json
+import blosc2
 import tarfile
+import numpy as np
 from dataclasses import dataclass, field
 from typing import List, Tuple, Dict, Any, Optional, Union
 
-import numpy as np
-import blosc2
+# 16 MiB threshold for switching from in-memory numpy to blosc2 NDArray storage.
+_BLOSC2_THRESHOLD_BYTES = 16 * 1024 * 1024  # 16 MiB
 
-from ..lib.blosc2_pickle import to_maybe_ndarray, from_maybe_ndarray, is_packed_ndarray, unpack_ndarray
 
-# Below these thresholds we keep plain numpy and let pickle/bz2 handle it.
-# Above them, we wrap in blosc2 — the store's pickler will then ship the
-# compressed cframe directly.
-_BLOSC2_BOOL_THRESHOLD_BYTES = 1024 * 1024       # sparse bool matrices
-_BLOSC2_FLOAT_THRESHOLD_BYTES = 1024 * 1024     # 4x higher; floats don't
-                                               # compress sparse-like, and
-                                               # blosc2 overhead is real.
-
-def _to_blosc2(tag: str, arr, *, threshold: int) -> Union[np.ndarray, blosc2.NDArray, None]:
+def _to_blosc2(tag: str, arr: Union[np.ndarray, blosc2.NDArray, None]) -> Union[np.ndarray, blosc2.NDArray, None]:
     """
-    Return `arr` as a blosc2.NDArray if it exceeds `threshold` bytes,
-    otherwise return it unchanged (or as _PackedBool for bools).
+    Return `arr` as a persistent `blosc2.NDArray` if it contains more than
+    `_BLOSC2_THRESHOLD_BYTES` of payload, otherwise return it unchanged.
 
-    `to_maybe_ndarray` handles bool packbits internally.
+    For reading back, we tag the NDArray in its metadata (`tag`) so the
+    loader can decide whether to keep it as NDArray (large) or convert it
+    to a numpy array (small), even when the threshold changes later.
     """
     if arr is None:
         return None
     if isinstance(arr, blosc2.NDArray):
-        # Already compressed; just retag if necessary.
-        if arr.vlmeta.get("score_field") != tag:
-            arr.vlmeta["score_field"] = tag
         return arr
     if not isinstance(arr, np.ndarray):
         return arr
+    if arr.nbytes <= _BLOSC2_THRESHOLD_BYTES:
+        return arr
 
-    # Determine per-dtype threshold:
-    # - bool  → very low (sparse!)
-    # - other → caller-provided
-    if arr.dtype == np.bool_:
-        eff_threshold = _BLOSC2_BOOL_THRESHOLD_BYTES
-    else:
-        eff_threshold = threshold
+    # Create a specific cparams/dparams for score payloads.
+    cparams = blosc2.CParams(
+        codec=blosc2.Codec.LZ4, typesize=1, clevel=1, nthreads=8,
+    )
+    dparams = blosc2.DParams(nthreads=16)
+    nd = blosc2.asarray(arr, cparams=cparams, dparams=dparams)
+    nd.vlmeta["score_tag"] = tag
+    return nd
 
-    result = to_maybe_ndarray(arr, threshold_bytes=eff_threshold, pack_bools=True)
-
-    # If we ended up with a blosc2.NDArray, tag it so future readers know
-    # which score-field it was (useful for debugging + re-derivation).
-    if isinstance(result, blosc2.NDArray):
-        result.vlmeta["score_field"] = tag
-    return result
-
+def _from_blosc2(arr: Union[np.ndarray, blosc2.NDArray, None]) -> Union[np.ndarray, blosc2.NDArray, None]:
+    """
+    Keep large payloads as `blosc2.NDArray`, convert small ones to numpy.
+    """
+    if arr is None:
+        return None
+    if not isinstance(arr, blosc2.NDArray):
+        return arr
+    if arr.nbytes <= _BLOSC2_THRESHOLD_BYTES:
+        return arr[:]
+    return arr
 
 @dataclass
 class ScoreEvent:
-    """Represents the score for a single collision."""
+    """Represents the score for a single collision"""
     coll_obj: int
     start_sample: int
     stop_sample: int
-    type: np.ndarray                                            # (samples, 1) int32
-    vertex_ids: Union[blosc2.NDArray, np.ndarray, Any]          # (samples, n_vertices) bool
-    contact_area: Union[blosc2.NDArray, np.ndarray, Any, None] = None
-    force:        Union[blosc2.NDArray, np.ndarray, Any, None] = None
-    coupling_data: Union[blosc2.NDArray, np.ndarray, Any, None] = None
+    type: np.ndarray # shape(total_samples,1, dtype=np.int32)
+    vertex_ids: Union[blosc2.ndarray.NDArray, np.ndarray]  # shape(total_samples,n_vertices)
+    contact_area: Union[blosc2.ndarray.NDArray, np.ndarray] = None # shape(total_samples,1)
+    force: Union[blosc2.ndarray.NDArray, np.ndarray] = None # shape(total_samples,1) Excitation force magnitude
+    coupling_data: Union[blosc2.ndarray.NDArray, np.ndarray] = None # shape(total_samples,1) Array of [other_obj_idx, coupling_strength] pairs
 
     def __post_init__(self):
-        # Apply the compression policy on every construction, including
-        # those coming from ScoreTrack.load(). This runs even if the
-        # caller passed raw numpy arrays.
-        self.type          = _to_blosc2("type", self.type, threshold=_BLOSC2_FLOAT_THRESHOLD_BYTES)
-        self.vertex_ids    = _to_blosc2("vertex_ids", self.vertex_ids, threshold=_BLOSC2_BOOL_THRESHOLD_BYTES)
-        self.contact_area  = _to_blosc2("contact_area", self.contact_area, threshold=_BLOSC2_FLOAT_THRESHOLD_BYTES)
-        self.force         = _to_blosc2("force", self.force, threshold=_BLOSC2_FLOAT_THRESHOLD_BYTES)
-        self.coupling_data = _to_blosc2("coupling_data", self.coupling_data, threshold=_BLOSC2_FLOAT_THRESHOLD_BYTES)
-
-        # Detect width of vertex_ids once, so `unpackbits` uses the right count
-        # at every call — no extra blosc2 metadata reads per lookup.
-        self._n_vertices = self._resolve_vertex_count()
+        # Enforce the ">16MB -> blosc2 NDArray" policy on every construction,
+        # including those coming from `ScoreTrack.load()`.
+        self.type = _to_blosc2("type", self.type) if not isinstance(self.type, blosc2.NDArray) else self.type
+        self.vertex_ids = _to_blosc2("vertex_ids", self.vertex_ids)
+        self.contact_area = _to_blosc2("contact_area", self.contact_area)
+        self.force = _to_blosc2("force", self.force)
+        self.coupling_data = _to_blosc2("coupling_data", self.coupling_data)
 
     def _get(self, name):
-        """Return field as numpy array (decompressed/materialized)."""
         v = getattr(self, name)
-        return from_maybe_ndarray(v)
+        if isinstance(v, blosc2.NDArray):
+            return v[:]
+        return v
 
     def __getstate__(self):
-        """
-        Do NOT materialize blosc2 → numpy. The store's Blosc2AwarePickler
-        reduces blosc2.NDArray to a tagged bytes cframe at serialization
-        time. That preserves compression end-to-end.
-        """
-        return dict(self.__dict__)
-
-    def _row(self, name: str, sample_idx: int):
-        """Return row `sample_idx` of a 1D/2D field, without unpacking the whole array."""
-        v = getattr(self, name)
-        if v is None:
-            return None
-
-        # Fast path: already a numpy array
-        if isinstance(v, np.ndarray):
-            return v[sample_idx]
-
-        # blosc2 path: single-row slice - decompresses only that row
-        if isinstance(v, blosc2.NDArray):
-            row = v[sample_idx]
-            return np.asarray(row)
-
-        # Unknown container: fall back to the safe path
-        return from_maybe_ndarray(v)[sample_idx]
+        state = self.__dict__.copy()
+        # blosc2 NDArrays don't pickle reliably; ship raw numpy to the pickler.
+        for k in ("type", "vertex_ids", "contact_area", "force", "coupling_data"):
+            v = state.get(k)
+            if isinstance(v, blosc2.NDArray):
+                state[k] = v[:]  # materialize
+        return state
 
     def __setstate__(self, state):
         self.__dict__.update(state)
-        # Re-apply the compression policy. Old pickles might still carry
-        # raw numpy arrays; they'll be upgraded on first touch.
-        self.__post_init__()
+        self.__post_init__()  # re-apply the >16MB -> NDArray policy
 
     def get_event_at_sample(self, sample_idx: int):
         """Get all events at a specific sample index."""
-        type_v = self._row("type", sample_idx)
-        type_v = int(type_v[0])
-        vertex_ids_v = self._row("vertex_ids", sample_idx)
-        force_v = self._row("force", sample_idx)
-        area_v = self._row("contact_area", sample_idx)
-        coupling_v = self._row("coupling_data", sample_idx)
-        active_verts = self._active_vertices(sample_idx)
-        return (
-            type_v,
-            active_verts,
-            force_v,
-            area_v,
-            self.coll_obj,
-            coupling_v,
-        )
-
-    def _active_vertices(self, sample_idx: int) -> list:
-        """
-        Return the vertex indices active at `sample_idx`.
-
-        For bool vertex_ids this is what `np.unique(np.nonzero(...))` used to
-        produce, but without decompressing the whole matrix.
-        """
-        v = self.vertex_ids
-        if v is None:
-            return []
-
-        # --- numpy path (bool already) ---
-        if isinstance(v, np.ndarray) and v.dtype == np.bool_:
-            return np.flatnonzero(v[sample_idx]).tolist()
-
-        # --- blosc2 packbits path (the common, expensive case) ---
-        if isinstance(v, blosc2.NDArray):
-            enc = v.vlmeta.get("encoding", None)
-            if enc == "packbits_bool":
-                n_vertices = self._n_vertices
-                # Read only the row's packed bytes.
-                packed_row = np.asarray(v[sample_idx])            # (ceil(n/8),) uint8
-                # Unpack just this row.
-                unpacked = np.unpackbits(packed_row, count=n_vertices)
-                return np.flatnonzero(unpacked).tolist()
-            # Non-packed blosc2 array
-            return np.flatnonzero(np.asarray(v[sample_idx])).tolist()
-
-        # Fallback for _PackedBool and other containers
-        n_vertices = self._n_vertices
-        if hasattr(v, "data") and hasattr(v, "orig_shape"):
-            packed_row = v.data[sample_idx]
-            unpacked = np.unpackbits(packed_row, count=n_vertices)
-            return np.flatnonzero(unpacked).tolist()
-
-        return np.unique(np.nonzero(from_maybe_ndarray(v)[sample_idx])).tolist()
-
-    def _resolve_vertex_count(self) -> int:
-        v = self.vertex_ids
-        if v is None:
-            return 0
-        if isinstance(v, blosc2.NDArray):
-            orig = v.vlmeta.get("orig_shape", None)
-            if orig is not None and len(orig) >= 2:
-                return int(orig[-1])
-            # Not packed — last axis is n_vertices
-            if v.ndim >= 2:
-                return int(v.shape[-1])
-            return 0
-        if isinstance(v, np.ndarray) and v.ndim >= 2:
-            return int(v.shape[-1])
-        if hasattr(v, "orig_shape"):
-            return int(v.orig_shape[-1])
-        return 0
-
-    # ------------------------------------------------------------------
-    # iterate a contiguous event
-    # ------------------------------------------------------------------
-    def iter_events(self, start: int, stop: int):
-        """
-        Yield (sample_idx, type, verts, force, area, coll_obj, coupling) for
-        each sample in [start, stop). Decompresses the field decompr once.
-        """
-        n = stop - start
-        if n <= 0:
-            return
-
-        # Materialise the needed fields once
-        type_v, vertex_slice, force_slice, area_slice, coupling_slice = self._materialize_slices(start, stop)
-
-        for i in range(n):
-            sample_idx = start + i
-            type_val = int(type_v[i][0])
-
-            if vertex_slice is not None and vertex_slice is not True:
-                packed_row = vertex_slice[i]
-                unpacked = np.unpackbits(packed_row, count=self._n_vertices)
-                verts = np.flatnonzero(unpacked).tolist()
-            else:
-                verts = self._active_vertices(sample_idx)
-
-            force_row = force_slice[i]
-            area_row = area_slice[i]
-            coupling_row = coupling_slice[i]
-            yield (sample_idx, type_val, verts, force_row, area_row, self.coll_obj, coupling_row)
-
-    def _materialize_slices(self, start, stop):
-        """Return slices of the needed fields in one shot."""
-        type_v = self._slice("type", slice(start, stop))
-        force_slice = self._slice("force", slice(start, stop))
-        area_slice = self._slice("contact_area", slice(start, stop))
-        coupling_slice = self._slice("coupling_data", slice(start, stop))
-
-        vertex_slice = None
-        if isinstance(self.vertex_ids, blosc2.NDArray):
-            enc = self.vertex_ids.vlmeta.get("encoding", None)
-            if enc == "packbits_bool":
-                # Row slice: ( (n_samples, ceil(n/8)) — still compressed rows.
-                vertex_slice = np.asarray(self.vertex_ids[start:stop])
-
-        return type_v, vertex_slice, force_slice, area_slice, coupling_slice
-
-    def _slice(self, name: str, sl: slice):
-        v = getattr(self, name)
-        if v is None:
-            return None
-        if isinstance(v, np.ndarray):
-            return v[sl]
-        if isinstance(v, blosc2.NDArray):
-            return np.asarray(v[sl])
-        return from_maybe_ndarray(v)[sl]
-
-    # -- Disk round-trip (tar.gz) ------------------------------------------
-    # Kept for backward compatibility; not used by KleptoEntityStore. Uses
-    # blosc2.save() which retains cframe compression.
+        return self.type[sample_idx][0], np.unique(np.nonzero(self.vertex_ids[sample_idx])).tolist(), self.force[sample_idx], self.contact_area[sample_idx], self.coll_obj, self.coupling_data[sample_idx]
 
     def save(self, output_path: str, obj_idx: int, idx: int):
+
         score_event = {
-            "coll_obj":     self.coll_obj,
-            "start_sample": self.start_sample,
-            "stop_sample":  self.stop_sample,
+            'coll_obj': self.coll_obj,
+            'start_sample': self.start_sample,
+            'stop_sample': self.stop_sample,
         }
+
         filenames = []
 
         json_file = f"{obj_idx}_{self.coll_obj}_{idx}.json"
-        with open(f"{output_path}/{json_file}", "w") as f:
+        with open(f"{output_path}/{json_file}", 'w') as f:
             json.dump(score_event, f, indent=2)
         filenames.append(json_file)
 
         def _save_field(name: str, arr, suffix: str):
             if arr is None:
                 return
-            filename = f"{obj_idx}_{self.coll_obj}_{idx}_{name}.{suffix}"
+            filename = f"{obj_idx}_{self.coll_obj_obj}_{idx}_{name}.{suffix}"
             if isinstance(arr, blosc2.NDArray):
+                # Keep the existing container (cparams/dparams preserved).
                 blosc2.save(arr, f"{output_path}/{filename}", mode="w")
             else:
+                # Small numpy payload: still wrap it in a blosc2 container.
                 blosc2.save_array(arr, f"{output_path}/{filename}", mode="w")
             filenames.append(filename)
 
@@ -362,7 +200,7 @@ class ScoreTrack:
             tar.add(f"{output_path}/{json_file}", json_file)
             for idx in range(len(self.events)):
                 filename = self.events[idx].save(output_path, self.obj_idx, idx)
-                tar.add(f"{output_path}/{filename}", filename)
+                tar.add(f"{output_path}/{filename}", filename)        
                 to_be_removed.append(filename)
 
         for filename in to_be_removed:
@@ -407,6 +245,7 @@ class ScoreTrack:
                         score_event_tar.extract(event_file, output_path)
                         to_be_removed.append(event_file)
                         path = f"{output_path}/{event_file}"
+
                         if event_file.endswith('.json'):
                             with open(path, 'r') as f:
                                 et = json.load(f)
