@@ -405,7 +405,7 @@ class KleptoEntityStore:
           task_builder   : callable(self, entity, idx, payload) -> delayed
         """
         if entity in _PRESERVE_BLOSC2_ENTITIES:
-            return "pickle", obj,, self._delayed_write_pickle
+            return "pickle", obj, self._delayed_write_pickle
 
         use_bz2 = (
             entity in self.config.bz2_entities
