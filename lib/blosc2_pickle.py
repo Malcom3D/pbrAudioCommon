@@ -31,8 +31,8 @@ purpose of using blosc2 for large, mostly-empty boolean masks like
 
 The solution
 ------------
-Wrapper stores the *container format* in memory (`blosc2.to_buffer`) and
-rebuilds the NDArray via `blosc2.from_buffer` on unpickle. nbytes, shape,
+Wrapper stores the *container format* in memory (`blosc2.NDArray.to_cframe`) and
+rebuilds the NDArray via `blosc2.ndarray_from_cframe` on unpickle. nbytes, shape,
 dtype, chunks, blocks and compression parameters all round-trip.
 """
 
@@ -59,15 +59,7 @@ class PicklableBlosc2NDArray:
 
     __slots__ = ("_buffer", "shape", "dtype", "cparams", "dparams", "vlmeta")
 
-    def __init__(
-        self,
-        buffer: bytes,
-        shape: tuple,
-        dtype: np.dtype,
-        cparams: Optional[dict] = None,
-        dparams: Optional[dict] = None,
-        vlmeta: Optional[dict] = None,
-    ):
+    def __init__(self, buffer: bytes, shape: tuple, dtype: np.dtype, cparams: Optional[dict] = None, dparams: Optional[dict] = None, vlmeta: Optional[dict] = None):
         self._buffer = buffer
         self.shape = tuple(shape)
         self.dtype = np.dtype(dtype)
@@ -83,10 +75,10 @@ class PicklableBlosc2NDArray:
         """
         Serialize a live `blosc2.NDArray` into a picklable wrapper.
 
-        `blosc2.to_buffer` returns the raw in-memory container bytes; on the
-        other side we rebuild with `blosc2.from_buffer`.
+        `blosc2.NDArray.to_cframe` returns the raw in-memory container bytes; on the
+        other side we rebuild with `blosc2.ndarray_from_cframe`.
         """
-        buf = blosc2.to_buffer(arr)
+        buf = blosc2.NDArray.to_cframe(arr)
         # cparams/dparams come back as dicts in recent blosc2 versions; keep
         # them defensive in case they're returned as CParams/DParams objects.
         try:
@@ -117,10 +109,10 @@ class PicklableBlosc2NDArray:
     # ------------------------------------------------------------------
     def to_ndarray(self) -> blosc2.NDArray:
         """Rebuild the original `blosc2.NDArray` from the stored buffer."""
-        # `blosc2.from_buffer` accepts the same container produced by
-        # `blosc2.to_buffer`, so shape/dtype/cparams are inferred. Do NOT
+        # `blosc2.ndarray_from_cframe` accepts the same container produced by
+        # `blosc2.NDArray.to_cframe`, so shape/dtype/cparams are inferred. Do NOT
         # pass shape/dtype here — they'd force densification.
-        arr = blosc2.from_buffer(self._buffer, mode="r")
+        arr = blosc2.ndarray_from_cframe(self._buffer)
         # Re-attach vlmeta if any (options live in the serde header, but be
         # explicit in case the version of blosc2 drops them).
         for k, v in (self.vlmeta or {}).items():
