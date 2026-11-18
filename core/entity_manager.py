@@ -37,6 +37,10 @@ _EAGER_SINGLETONS = frozenset({
     "material_properties", "medium_properties",
 })
 
+_EAGER_EFFIMERAL = frozenset({
+    "connected_buffer"
+})
+
 class EntityManager:
     _instance = None
     _initialized = False
@@ -298,8 +302,7 @@ class EntityManager:
             if not container:
                 continue
             # only write keys not yet in store
-            new_items = [(k, v) for k, v in container.items()
-                         if not self._store.exists(name, k)]
+            new_items = [(k, v) for k, v in container.items() if not self._store.exists(name, k) or k in _EAGER_EFFIMERAL]
             if new_items:
                 self._store.put_sync_many(name, new_items)
 
