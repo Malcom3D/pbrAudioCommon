@@ -94,7 +94,7 @@ class PicklableBlosc2NDArray:
         except Exception:
             cparams = None
         try:
-            dparams = dict dict(arr.dparams)
+            dparams = dict(arr.dparams)
         except Exception:
             dparams = None
 
@@ -195,7 +195,7 @@ def unwrap_from_pickle(value: Any) -> Any:
     if isinstance(value, tuple):
         return tuple(unwrap_from_pickle(v) for v in value)
     if isinstance(value, dict):
-        return {k: unw unwrap_from_pickle(v) for k, v in value.items()}
+        return {k: unwrap_from_pickle(v) for k, v in value.items()}
     if hasattr(value, "__dataclass_fields__"):
         for name in value.__dataclass_fields__:
             setattr(value, name, unwrap_from_pickle(getattr(value, name)))
