@@ -117,7 +117,7 @@ class ScoreEvent:
 
     def get_event_at_sample(self, sample_idx: int):
         """Get all events at a specific sample index."""
-        vertex_ids = self.vertex_ids[sample_idx,np.where(self.vertex_ids[sample_idx] != -1)[0]].tolist()
+        vertex_ids = self.vertex_ids[sample_idx-self.start_sample,np.where(self.vertex_ids[sample_idx-self.start_sample] != -1)[0]].tolist()
         return self.type[sample_idx][0], vertex_ids, self.force[sample_idx], self.contact_area[sample_idx], self.coll_obj, self.coupling_data[sample_idx]
 
     def save(self, output_path: str, obj_idx: int, idx: int):
