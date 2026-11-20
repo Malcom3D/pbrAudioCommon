@@ -31,8 +31,7 @@ from ..lib.blosc2_pickle import wrap_for_pickle, unwrap_from_pickle
 # 16 MiB threshold for switching from in-memory numpy to blosc2 NDArray storage.
 _BLOSC2_THRESHOLD_BYTES = 16 * 1024 * 1024  # 16 MiB
 
-
-def _to_blosc2(tag: str, arr: Union[np.ndarray, blosc2.NDArray, None]) -> Union[np.ndarray, blosc2.NDArray, None]:
+def _to_blosc2(tag: str, arr: Union[np.ndarray, blosc2.NDArray, None], cparams: blosc2.CParams = None, dparams: blosc2.DParams = None) -> Union[np.ndarray, blosc2.NDArray, None]:
     """
     Return `arr` as a persistent `blosc2.NDArray` if it contains more than
     `_BLOSC2_THRESHOLD_BYTES` of payload, otherwise return it unchanged.
@@ -51,10 +50,8 @@ def _to_blosc2(tag: str, arr: Union[np.ndarray, blosc2.NDArray, None]) -> Union[
         return arr
 
     # Create a specific cparams/dparams for score payloads.
-    cparams = blosc2.CParams(codec=blosc2.Codec.LZ4, clevel=1, nthreads=8)
-    if tag == 'vertex_ids':
-        cparams = blosc2.CParams(codec=blosc2.Codec.LZ4, typesize=1, clevel=1, nthreads=8)
-    dparams = blosc2.DParams(nthreads=16)
+    cparams = cparams or blosc2.CParams(codec=blosc2.Codec.LZ4, clevel=1, nthreads=8)
+    dparams = dparams or blosc2.DParams(nthreads=16)
     nd = blosc2.asarray(arr, cparams=cparams, dparams=dparams)
     nd.vlmeta["score_tag"] = tag
     return nd
