@@ -118,7 +118,7 @@ class ScoreEvent:
     def get_event_at_sample(self, sample_idx: int):
         """Get all events at a specific sample index."""
         _idx = sample_idx - self.start_sample
-        _idx = _idx if self.stop_sample - self.start_sample > _idx else _idx -1
+        _idx = _idx if not self.vertex_ids.shape[0] == _idx else _idx -1
         vertex_ids = self.vertex_ids[_idx][np.where(self.vertex_ids[_idx] != -1)[0]].tolist()
         return self.type[sample_idx][0], vertex_ids, self.force[sample_idx], self.contact_area[sample_idx], self.coll_obj, self.coupling_data[sample_idx]
 
