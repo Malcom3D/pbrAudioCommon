@@ -290,7 +290,7 @@ class EntityManager:
         return {}
 
     def _store_count(self, coll: str) -> int:
-        # store is the truth; but if lazy we may have unsaved writes →
+        # store is the truth; but if lazy we may have unsaved writes:
         # add len(container) when container is preferred
         return len(self._store.iter_keys(coll)) or len(getattr(self, f"_{coll}", {}))
 
@@ -330,8 +330,7 @@ class EntityManager:
 
     def _matches(self, coll: str, obj: Any) -> bool:
         tname = str(type(obj))
-        for sub in self.entities_map[coll] if isinstance(self.entities_map[coll], list) \
-                else [self.entities_map[coll]]:
+        for sub in self.entities_map[coll] if isinstance(self.entities_map[coll], list) else [self.entities_map[coll]]:
             if sub in tname:
                 return True
         return False
